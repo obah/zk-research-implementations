@@ -1,77 +1,128 @@
+use std::ops::{Add, Mul};
+
+#[derive(Debug)]
 struct UnivariatePoly {
-    coefficient: Vec<usize>,
+    coefficient: Vec<f64>,
 }
 
-// struct Point {
-//     x: usize,
-//     y: usize,
-// }
+struct Point(isize, isize);
 
 impl UnivariatePoly {
-    fn evaluate(&self, x: usize) -> usize {
+    fn new(coeff: Vec<f64>) -> Self {
+        UnivariatePoly { coefficient: coeff }
+    }
+
+    fn evaluate(&self, x: u32) -> f64 {
         self.coefficient
             .iter()
             .enumerate()
-            .map(|(index, coeff)| coeff * x.pow(index.try_into().unwrap()))
+            .map(|(index, coeff)| coeff * x.pow(index as u32) as f64)
             .sum()
-
-        //map each item to coeff * var ^^ index then sum
     }
 
     fn degree(&self) -> usize {
         self.coefficient.len() - 1
     }
 
-    // fn interpolate(points: Vec<Point>) -> UnivariatePoly {}
-}
+    fn scalar_mul(&self, val: f64) -> Self {
+        let coefficients = self.coefficient.iter().map(|point| point * val).collect();
 
-struct SparseUnivariatePoly {
-    coefficient: Vec<(usize, usize)>,
-}
-
-impl SparseUnivariatePoly {
-    fn evaluate(&self, x: usize) -> usize {
-        self.coefficient
-            .iter()
-            .map(|coeff| coeff.0 * x.pow(coeff.1.try_into().unwrap()))
-            .sum()
+        UnivariatePoly::new(coefficients)
     }
 
-    fn degree(&self) -> usize {
-        let coefficients = &self.coefficient;
+    fn interpolate(points: Vec<Point>) -> UnivariatePoly {
+        todo!()
+    }
+}
 
-        let mut largest = coefficients[0].1;
+impl Add for UnivariatePoly {
+    type Output = Self;
 
-        for (_, coeff) in coefficients.iter().enumerate() {
-            let current_degree = coeff.1;
+    fn add(self, other: Self) -> Self {
+        let mut result = vec![0.0; self.coefficient.len().max(other.coefficient.len())];
 
-            if largest < current_degree {
-                largest = current_degree;
+        for (i, &coeff) in self.coefficient.iter().enumerate() {
+            result[i] += coeff;
+        }
+
+        for (i, &coeff) in other.coefficient.iter().enumerate() {
+            result[i] += coeff;
+        }
+
+        UnivariatePoly::new(result)
+    }
+}
+
+impl Mul for UnivariatePoly {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        let mut coeffs = vec![0.0; self.degree() + other.degree() + 1];
+
+        for (i, a) in self.coefficient.iter().enumerate() {
+            for (j, b) in other.coefficient.iter().enumerate() {
+                coeffs[i + j] += a * b;
             }
         }
 
-        largest
+        UnivariatePoly::new(coeffs)
     }
 }
 
-// {}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub fn polynomial() {
-    let polynomial1 = UnivariatePoly {
-        coefficient: vec![1, 2, 4],
-    };
+    #[test]
+    fn it_returns_degree() {
+        let poly_1 = UnivariatePoly {
+            coefficient: vec![3.0, 4.0, 3.0],
+        };
 
-    let result1 = polynomial1.evaluate(3);
-    let degree1 = polynomial1.degree();
+        assert!(poly_1.degree() == 2);
+    }
 
-    println!("evaluation of polynomial1 is {result1} and its degree is {degree1}");
+    #[test]
+    fn it_evaluates_poly() {
+        let poly_1 = UnivariatePoly {
+            coefficient: vec![3.0, 4.0, 3.0],
+        };
 
-    let polynomial2 = SparseUnivariatePoly {
-        coefficient: vec![(1, 0), (2, 1), (4, 2)],
-    };
+        assert!(poly_1.evaluate(3) == 42.0);
+    }
 
-    let result2 = polynomial2.evaluate(3);
-    let degree2 = polynomial2.degree();
+    #[test]
+    fn it_scales() {
+        let poly_1 = UnivariatePoly {
+            coefficient: vec![3.0, 4.0, 3.0],
+        };
 
-    println!("evaluation of polynomial2 is {result2} and its degree is {degree2}");
+        assert!(poly_1.scalar_mul(2.0).coefficient == vec![6.0, 8.0, 6.0]);
+    }
+
+    #[test]
+    fn it_adds_correctly() {
+        let poly_1 = UnivariatePoly {
+            coefficient: vec![3.0, 4.0, 3.0],
+        };
+
+        let poly_2 = UnivariatePoly {
+            coefficient: vec![-3.0, 0.0, 0.0, 4.0],
+        };
+
+        assert!((poly_1 + poly_2).coefficient == vec![0.0, 4.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn it_multiplies_correctly() {
+        let poly_1 = UnivariatePoly {
+            coefficient: vec![3.0, 4.0, 3.0],
+        };
+
+        let poly_2 = UnivariatePoly {
+            coefficient: vec![-3.0, 0.0, 0.0, 4.0],
+        };
+
+        assert!((poly_1 * poly_2).coefficient == vec![-9.0, -12.0, -9.0, 12.0, 16.0, 12.0]);
+    }
 }
