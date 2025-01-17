@@ -5,8 +5,6 @@ struct UnivariatePoly {
     coefficient: Vec<f64>,
 }
 
-struct Point(isize, isize);
-
 impl UnivariatePoly {
     fn new(coeff: Vec<f64>) -> Self {
         UnivariatePoly { coefficient: coeff }
@@ -24,14 +22,40 @@ impl UnivariatePoly {
         self.coefficient.len() - 1
     }
 
-    fn scalar_mul(&self, val: f64) -> Self {
-        let coefficients = self.coefficient.iter().map(|point| point * val).collect();
+    fn scalar_mul(&self, scalar: f64) -> Self {
+        let coefficients = self
+            .coefficient
+            .iter()
+            .map(|point| point * scalar)
+            .collect();
 
         UnivariatePoly::new(coefficients)
     }
 
-    fn interpolate(points: Vec<Point>) -> UnivariatePoly {
-        todo!()
+    fn interpolate(points: Vec<(isize, isize)>) -> UnivariatePoly {
+        let n = points.len();
+        let mut result = UnivariatePoly::new(vec![0.0]);
+
+        for i in 0..n {
+            let (x_i, y_i) = points[i];
+            let mut l_i = UnivariatePoly::new(vec![1.0]);
+
+            for j in 0..n {
+                if i != j {
+                    let (x_j, _) = points[j];
+
+                    let numerator = UnivariatePoly::new(vec![-x_j as f64, 1.0]);
+
+                    let denominator = (x_i - x_j) as f64;
+
+                    l_i = l_i * numerator.scalar_mul(1.0 / denominator);
+                }
+            }
+
+            result = result + l_i.scalar_mul(y_i as f64);
+        }
+
+        result
     }
 }
 
@@ -67,6 +91,12 @@ impl Mul for UnivariatePoly {
 
         UnivariatePoly::new(coeffs)
     }
+}
+
+pub fn polynomial() {
+    let points = vec![(0, 2), (1, 4), (2, 6)];
+    let interpolated_poly = UnivariatePoly::interpolate(points);
+    println!("Interpolated Polynomial: {:?}", interpolated_poly);
 }
 
 #[cfg(test)]
@@ -124,5 +154,14 @@ mod tests {
         };
 
         assert!((poly_1 * poly_2).coefficient == vec![-9.0, -12.0, -9.0, 12.0, 16.0, 12.0]);
+    }
+
+    #[test]
+    fn it_interpolates_points() {
+        let points = vec![(0, 2), (1, 4), (2, 6)];
+
+        let new_poly = UnivariatePoly::interpolate(points);
+
+        assert!(new_poly.coefficient == vec![2.0, 2.0, 0.0]);
     }
 }

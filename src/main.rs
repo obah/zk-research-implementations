@@ -1,5 +1,6 @@
 mod polynomial;
 
 fn main() {
-    println!("ZK Bootcamp")
+    println!("ZK Bootcamp");
+    polynomial::polynomial();
 }
