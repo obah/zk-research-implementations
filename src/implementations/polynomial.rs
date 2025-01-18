@@ -1,16 +1,16 @@
 use std::ops::{Add, Mul};
 
-#[derive(Debug)]
-struct UnivariatePoly {
-    coefficient: Vec<f64>,
+#[derive(Debug, Clone)]
+pub struct UnivariatePoly {
+    pub coefficient: Vec<f64>,
 }
 
 impl UnivariatePoly {
-    fn new(coeff: Vec<f64>) -> Self {
+    pub fn new(coeff: Vec<f64>) -> Self {
         UnivariatePoly { coefficient: coeff }
     }
 
-    fn evaluate(&self, x: u32) -> f64 {
+    pub fn evaluate(&self, x: u32) -> f64 {
         self.coefficient
             .iter()
             .enumerate()
@@ -32,7 +32,7 @@ impl UnivariatePoly {
         UnivariatePoly::new(coefficients)
     }
 
-    fn interpolate(points: Vec<(isize, isize)>) -> UnivariatePoly {
+    pub fn interpolate(points: Vec<(f64, f64)>) -> UnivariatePoly {
         let n = points.len();
         let mut result = UnivariatePoly::new(vec![0.0]);
 
@@ -44,9 +44,9 @@ impl UnivariatePoly {
                 if i != j {
                     let (x_j, _) = points[j];
 
-                    let numerator = UnivariatePoly::new(vec![-x_j as f64, 1.0]);
+                    let numerator = UnivariatePoly::new(vec![-x_j, 1.0]);
 
-                    let denominator = (x_i - x_j) as f64;
+                    let denominator = x_i - x_j;
 
                     l_i = l_i * numerator.scalar_mul(1.0 / denominator);
                 }
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn it_interpolates_points() {
-        let points = vec![(0, 2), (1, 4), (2, 6)];
+        let points = vec![(0.0, 2.0), (1.0, 4.0), (2.0, 6.0)];
 
         let new_poly = UnivariatePoly::interpolate(points);
 
