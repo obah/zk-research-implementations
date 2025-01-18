@@ -93,12 +93,6 @@ impl Mul for UnivariatePoly {
     }
 }
 
-pub fn polynomial() {
-    let points = vec![(0, 2), (1, 4), (2, 6)];
-    let interpolated_poly = UnivariatePoly::interpolate(points);
-    println!("Interpolated Polynomial: {:?}", interpolated_poly);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
