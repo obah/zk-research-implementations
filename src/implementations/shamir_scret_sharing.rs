@@ -78,7 +78,8 @@ mod tests {
         let secret_data = -5.0;
 
         let shares = share_points(10, &secret_poly);
-        let recreated_poly = recreate_polynomial(shares, 3);
+        let collected_shares = shares[2..6].to_vec();
+        let recreated_poly = recreate_polynomial(collected_shares, 3);
         let recovered_secret = get_secret(&recreated_poly, secret_point);
 
         assert_eq!(recreated_poly.coefficient, secret_poly.coefficient);
