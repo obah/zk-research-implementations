@@ -1,7 +1,7 @@
 use crate::implementations::polynomial::UnivariatePoly;
 use ark_bn254::Fq;
-use ark_std::{rand::rngs::StdRng, test_rng};
-use rand::Rng;
+use ark_std::rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 fn recreate_polynomial(points: Vec<(Fq, Fq)>, threshold: usize) -> UnivariatePoly<Fq> {
     if points.len() < threshold {
@@ -24,10 +24,7 @@ fn get_secret(poly: &UnivariatePoly<Fq>, x_point: Fq) -> Fq {
 }
 
 fn share_points(shares: usize, poly: &UnivariatePoly<Fq>) -> Vec<(Fq, Fq)> {
-    //TODO change this to StdRng let mut rng = StdRng::;
-    // let mut rng = StdRng::from_seed(seed);
-
-    let mut rng = test_rng();
+    let mut rng = StdRng::from_entropy();
 
     let mut shares: Vec<(Fq, Fq)> = vec![(Fq::from(0), Fq::from(0)); shares];
 
