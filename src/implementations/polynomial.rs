@@ -11,6 +11,12 @@ impl<F: PrimeField> UnivariatePoly<F> {
         UnivariatePoly { coefficient: coeff }
     }
 
+    fn trim(&mut self) {
+        while self.coefficient.last() == Some(&F::zero()) {
+            self.coefficient.pop();
+        }
+    }
+
     pub fn evaluate(&self, x: F) -> F {
         self.coefficient
             .iter()
@@ -19,7 +25,9 @@ impl<F: PrimeField> UnivariatePoly<F> {
             .sum()
     }
 
-    fn degree(&self) -> usize {
+    pub fn degree(&mut self) -> usize {
+        self.trim();
+
         self.coefficient.len() - 1
     }
 
@@ -30,7 +38,11 @@ impl<F: PrimeField> UnivariatePoly<F> {
             .map(|point| *point * scalar)
             .collect();
 
-        UnivariatePoly::new(coefficients)
+        let mut poly = UnivariatePoly::new(coefficients);
+
+        poly.trim();
+
+        poly
     }
 
     pub fn interpolate(points: Vec<(F, F)>) -> UnivariatePoly<F> {
@@ -55,6 +67,8 @@ impl<F: PrimeField> UnivariatePoly<F> {
 
             result = result + l_i.scalar_mul(y_i);
         }
+
+        result.trim();
 
         result
     }
@@ -81,7 +95,7 @@ impl<F: PrimeField> Add for UnivariatePoly<F> {
 impl<F: PrimeField> Mul for UnivariatePoly<F> {
     type Output = Self;
 
-    fn mul(self, other: Self) -> Self {
+    fn mul(mut self, mut other: Self) -> Self {
         let mut coeffs = vec![F::zero(); self.degree() + other.degree() + 1];
 
         for (i, a) in self.coefficient.iter().enumerate() {
@@ -101,7 +115,7 @@ mod test {
 
     #[test]
     fn it_returns_degree() {
-        let poly_1: UnivariatePoly<Fq> = UnivariatePoly {
+        let mut poly_1: UnivariatePoly<Fq> = UnivariatePoly {
             coefficient: vec![Fq::from(3), Fq::from(4), Fq::from(3)],
         };
 
@@ -178,6 +192,6 @@ mod test {
 
         let new_poly = UnivariatePoly::interpolate(points);
 
-        assert!(new_poly.coefficient == vec![Fq::from(2), Fq::from(2), Fq::from(0)]);
+        assert!(new_poly.coefficient == vec![Fq::from(2), Fq::from(2)]);
     }
 }
