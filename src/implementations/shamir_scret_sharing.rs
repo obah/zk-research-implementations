@@ -3,7 +3,7 @@ use ark_bn254::Fq;
 use ark_std::rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-fn get_polynomia(threshold: usize, secret_value: Fq, secret_point: Fq) -> UnivariatePoly<Fq> {
+fn create_polynomia(threshold: usize, secret_value: Fq, secret_point: Fq) -> UnivariatePoly<Fq> {
     let mut points = vec![];
     let base_point = (secret_point, secret_value);
 
@@ -23,7 +23,7 @@ fn get_polynomia(threshold: usize, secret_value: Fq, secret_point: Fq) -> Univar
     poly
 }
 
-fn recreate_polynomial(points: Vec<(Fq, Fq)>, threshold: usize) -> UnivariatePoly<Fq> {
+fn recover_polynomial(points: Vec<(Fq, Fq)>, threshold: usize) -> UnivariatePoly<Fq> {
     if points.len() < threshold {
         panic!("Not enough points to recreate polynomial");
     }
@@ -73,7 +73,7 @@ mod test {
     use crate::implementations::polynomial::UnivariatePoly;
     use ark_bn254::Fq;
 
-    use super::{get_polynomia, get_secret, recreate_polynomial, share_points};
+    use super::{create_polynomia, get_secret, recover_polynomial, share_points};
 
     #[test]
     fn it_creates_a_correct_polynomial() {
@@ -81,7 +81,7 @@ mod test {
         let secret_value = Fq::from(40);
         let secret_point = Fq::from(6);
 
-        let mut polynomial = get_polynomia(threshold, secret_value, secret_point);
+        let mut polynomial = create_polynomia(threshold, secret_value, secret_point);
 
         let secret_evaluation = polynomial.evaluate(Fq::from(6));
 
@@ -98,7 +98,7 @@ mod test {
         ];
         let threshold = 3;
 
-        let secret_poly = recreate_polynomial(points, threshold);
+        let secret_poly = recover_polynomial(points, threshold);
 
         assert_eq!(
             secret_poly.coefficient,
@@ -134,7 +134,7 @@ mod test {
             wrong_point,
         ];
 
-        let polynomial = recreate_polynomial(points, 3);
+        let polynomial = recover_polynomial(points, 3);
 
         assert_ne!(
             polynomial.coefficient,
@@ -148,20 +148,20 @@ mod test {
     fn it_doesnt_generate_with_few_points() {
         let points = vec![(Fq::from(1), Fq::from(-1)), (Fq::from(2), Fq::from(5))];
 
-        let _ = recreate_polynomial(points, 3);
+        let _ = recover_polynomial(points, 3);
     }
 
     #[test]
     fn it_all_works_properly() {
         let secret_point = Fq::from(0);
         let secret_data = Fq::from(-5);
-        let secret_poly = get_polynomia(3, secret_data, secret_point);
+        let secret_poly = create_polynomia(3, secret_data, secret_point);
 
         let shares = share_points(10, 3, &secret_poly);
 
         let collected_shares = shares[2..6].to_vec();
 
-        let recreated_poly = recreate_polynomial(collected_shares, 3);
+        let recreated_poly = recover_polynomial(collected_shares, 3);
 
         let recovered_secret = get_secret(&recreated_poly, secret_point);
 
