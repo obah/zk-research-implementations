@@ -18,6 +18,8 @@ fn create_polynomia(threshold: usize, secret_value: Fq, secret_point: Fq) -> Uni
         points.push((random_x_point, random_y_point));
     }
 
+    // UnivariatePoly::interpolate((1..threshold).map(|_| (F::rand(&mut rng), F::rand(&mut rng))).collect());
+
     let poly = UnivariatePoly::interpolate(points);
 
     poly
