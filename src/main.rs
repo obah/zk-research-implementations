@@ -1,5 +1,5 @@
 use ark_bn254::Fq;
-use implementations::polynomial::UnivariatePoly;
+use implementations::univariate_polynomial::UnivariatePoly;
 
 mod implementations;
 

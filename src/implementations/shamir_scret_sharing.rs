@@ -1,4 +1,4 @@
-use crate::implementations::polynomial::UnivariatePoly;
+use crate::implementations::univariate_polynomial::UnivariatePoly;
 use ark_bn254::Fq;
 use ark_std::rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -72,7 +72,7 @@ fn share_points(
 
 #[cfg(test)]
 mod test {
-    use crate::implementations::polynomial::UnivariatePoly;
+    use crate::implementations::univariate_polynomial::UnivariatePoly;
     use ark_bn254::Fq;
 
     use super::{create_polynomia, get_secret, recover_polynomial, share_points};
