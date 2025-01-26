@@ -15,42 +15,30 @@ impl<F: PrimeField> BHC<F> {
         BHC { bits: hypercube }
     }
 
-    fn generate_bhc(bits: usize, poly_evaluation: Vec<F>) -> Self {
+    fn generate_bhc(poly_evaluation: Vec<F>) -> Self {
+        let bits = poly_evaluation.len().ilog2() as usize;
         let size = 1 << bits;
-        let mut binary_values = Vec::with_capacity(size);
 
-        for i in 0..size {
-            let mut point = Vec::with_capacity(bits);
-
-            for j in (0..bits).rev() {
-                point.push(((i >> j) & 1) as u8);
-            }
-
-            binary_values.push(point);
-        }
-
-        let hypercube: Hypercube<F> = binary_values
-            .iter()
-            .enumerate()
-            .map(|(i, point)| (point.clone(), poly_evaluation[i].clone()))
+        let hypercube: Hypercube<F> = (0..size)
+            .map(|i| {
+                let point = (0..bits).rev().map(|j| ((i >> j) & 1) as u8).collect();
+                (point, poly_evaluation[i])
+            })
             .collect();
 
         Self::new(hypercube)
     }
 
-    fn pair_points(&mut self, bit: u8) -> Vec<(F, F)> {
+    fn pair_points(&self, bit: u8) -> Vec<(F, F)> {
         let mut pairs = Vec::new();
-        let mut pair_index = 1 << bit;
+        let pair_index = 1 << bit;
 
-        while pair_index > 0 && self.bits.len() > 1 {
-            if pair_index < self.bits.len() {
-                let (_, a) = self.bits.remove(0);
-                let (_, b) = self.bits.remove(pair_index - 1);
-                pairs.push((a, b));
-            } else {
-                break;
+        for i in 0..pair_index {
+            if i + pair_index < self.bits.len() {
+                let (_, a) = &self.bits[i];
+                let (_, b) = &self.bits[i + pair_index];
+                pairs.push((a.clone(), b.clone()));
             }
-            pair_index -= 1;
         }
 
         pairs
@@ -71,9 +59,7 @@ impl<F: PrimeField> MultilinearPoly<F> {
     }
 
     fn partial_evaluate(&self, value: F, bit: u8) -> Self {
-        let bits = self.evaluation.len().ilog2() as usize;
-
-        let mut bhc = BHC::generate_bhc(bits, self.evaluation.clone());
+        let bhc = BHC::generate_bhc(self.evaluation.clone());
 
         let paired_evaluations = bhc
             .pair_points(bit)
@@ -111,7 +97,7 @@ mod test {
     #[test]
     fn it_pair_points_correctly() {
         let evaluations = vec![Fq::from(0), Fq::from(1), Fq::from(2), Fq::from(3)];
-        let mut bhc = BHC::generate_bhc(2, evaluations);
+        let bhc = BHC::generate_bhc(evaluations);
 
         let pairs = bhc.pair_points(1);
         assert_eq!(

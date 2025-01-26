@@ -53,3 +53,37 @@ impl<F: PrimeField> MultilinearPolySparseTrait<F> for MultilinearPolySparse<F> {
         todo!()
     }
 }
+
+//? boolean hypercube from multilinear evaluation
+// fn generate_bhc(bits: usize, poly_evaluation: Vec<F>) -> Self {
+//     let size = 1 << bits;
+//     // let mut binary_values = Vec::with_capacity(size);
+
+//     // for i in 0..size {
+//     //     let mut point = Vec::with_capacity(bits);
+
+//     //     for j in (0..bits).rev() {
+//     //         point.push(((i >> j) & 1) as u8);
+//     //     }
+
+//     //     binary_values.push(point);
+//     // }
+
+//     let binary_values: Vec<Vec<u8>> = (0..size)
+//         .map(|i| (0..bits).rev().map(|j| ((i >> j) & 1) as u8).collect())
+//         .collect();
+
+//     // let hypercube: Hypercube<F> = binary_values
+//     //     .iter()
+//     //     .enumerate()
+//     //     .map(|(i, point)| (point.clone(), poly_evaluation[i].clone()))
+//     //     .collect();
+
+//     let hypercube: Hypercube<F> = binary_values
+//         .iter()
+//         .enumerate()
+//         .map(|(i, point)| (point.clone(), poly_evaluation[i])) // Avoid cloning F
+//         .collect();
+
+//     Self::new(hypercube)
+// }
