@@ -2,11 +2,11 @@ use ark_ff::PrimeField;
 
 type Hypercube<F> = Vec<(Vec<u8>, F)>;
 
-struct BHC<F> {
+pub struct BHC<F> {
     bits: Hypercube<F>,
 }
 
-struct MultilinearPoly<F: PrimeField> {
+pub struct MultilinearPoly<F: PrimeField> {
     evaluation: Vec<F>,
 }
 
