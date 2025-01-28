@@ -91,13 +91,10 @@ impl<F: PrimeField> MultilinearPoly<F> {
     // }
 
     pub fn evaluate(&self, values: Vec<F>) -> F {
-        // Clone `self` to get an owned copy of the polynomial
         let mut result = self.clone();
 
-        // Calculate the number of bits
         let mut bits = result.evaluation.len().ilog2() - 1;
 
-        // Iterate over the values and partially evaluate the polynomial
         for value in values.iter() {
             result = result.partial_evaluate(*value, bits.try_into().unwrap());
 

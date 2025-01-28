@@ -1,7 +1,5 @@
 use ark_bn254::Fq;
-use implementations::univariate_polynomial::UnivariatePoly;
-
-mod implementations;
+use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
 fn check_test(x: Fq, poly: &UnivariatePoly<Fq>) {
     assert_eq!(
@@ -10,7 +8,7 @@ fn check_test(x: Fq, poly: &UnivariatePoly<Fq>) {
     );
 }
 
-fn fibonacci_check() {
+pub fn fibonacci_check() {
     let fib_points = vec![
         Fq::from(1),
         Fq::from(1),
@@ -33,10 +31,4 @@ fn fibonacci_check() {
     check_test(Fq::from(2), &polynomial);
     check_test(Fq::from(5), &polynomial);
     check_test(Fq::from(7), &polynomial);
-}
-
-fn main() {
-    println!("ZK Bootcamp");
-
-    fibonacci_check();
 }
