@@ -1,7 +1,7 @@
-use crate::implementations::univariate_polynomial::UnivariatePoly;
 use ark_bn254::Fq;
 use ark_std::rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
 fn create_polynomia(threshold: usize, secret_value: Fq, secret_point: Fq) -> UnivariatePoly<Fq> {
     let mut points = vec![];
@@ -17,8 +17,6 @@ fn create_polynomia(threshold: usize, secret_value: Fq, secret_point: Fq) -> Uni
 
         points.push((random_x_point, random_y_point));
     }
-
-    // UnivariatePoly::interpolate((1..threshold).map(|_| (F::rand(&mut rng), F::rand(&mut rng))).collect());
 
     let poly = UnivariatePoly::interpolate(points);
 
@@ -72,8 +70,8 @@ fn share_points(
 
 #[cfg(test)]
 mod test {
-    use crate::implementations::univariate_polynomial::UnivariatePoly;
     use ark_bn254::Fq;
+    use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     use super::{create_polynomia, get_secret, recover_polynomial, share_points};
 

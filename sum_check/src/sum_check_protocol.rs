@@ -1,16 +1,16 @@
-use crate::implementations::multilinear_polynomial::MultilinearPoly;
 use ark_bn254::Fq;
 
-use super::fiat_shamir::Transcipt;
+use fiat_shamir::fiat_shamir_transcript::Transcript;
+use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
 
 struct SumCheck {
     polynomial: MultilinearPoly<Fq>,
-    transcript: Transcipt<Fq>,
+    transcript: Transcript<Fq>,
 }
 
 impl SumCheck {
     fn new(poly: MultilinearPoly<Fq>) -> Self {
-        let new_transcript = Transcipt::new(&poly.evaluation);
+        let new_transcript = Transcript::new(&poly.evaluation);
 
         SumCheck {
             polynomial: poly,

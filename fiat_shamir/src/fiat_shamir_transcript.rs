@@ -1,10 +1,8 @@
 use std::marker::PhantomData;
 
 use ark_ff::PrimeField;
-use ark_std::rand::rngs::StdRng;
 use dusk_bls12_381::BlsScalar;
 use dusk_poseidon::{Domain, Hash};
-use rand::{Rng, SeedableRng};
 
 pub struct Transcript<'a, F> {
     _field: PhantomData<F>,
