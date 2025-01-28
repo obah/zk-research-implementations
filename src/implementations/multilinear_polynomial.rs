@@ -1,4 +1,5 @@
 use ark_ff::PrimeField;
+use std::ops::{Add, AddAssign};
 
 type Hypercube<F> = Vec<(Vec<u8>, F)>;
 
@@ -6,8 +7,9 @@ struct BHC<F> {
     bits: Hypercube<F>,
 }
 
-struct MultilinearPoly<F: PrimeField> {
-    evaluation: Vec<F>,
+#[derive(Clone)]
+pub struct MultilinearPoly<F: PrimeField> {
+    pub evaluation: Vec<F>,
 }
 
 impl<F: PrimeField> BHC<F> {
@@ -46,7 +48,7 @@ impl<F: PrimeField> BHC<F> {
 }
 
 impl<F: PrimeField> MultilinearPoly<F> {
-    fn new(evaluations: Vec<F>) -> Self {
+    pub fn new(evaluations: Vec<F>) -> Self {
         MultilinearPoly {
             evaluation: evaluations,
         }
@@ -58,7 +60,7 @@ impl<F: PrimeField> MultilinearPoly<F> {
         y_0 + (value * (y_1 - y_0))
     }
 
-    fn partial_evaluate(&self, value: F, bit: u8) -> Self {
+    pub fn partial_evaluate(&self, value: F, bit: u8) -> Self {
         let bhc = BHC::generate_bhc(self.evaluation.clone());
 
         let paired_evaluations = bhc
@@ -70,11 +72,32 @@ impl<F: PrimeField> MultilinearPoly<F> {
         Self::new(paired_evaluations)
     }
 
-    fn evaluate(self, values: Vec<F>) -> F {
-        let mut result = self;
+    // pub fn evaluate(&self, values: Vec<F>) -> F {
+    //     let mut result = self;
 
+    //     let mut bits = result.evaluation.len().ilog2() - 1;
+
+    //     for value in values.iter() {
+    //         result = result.partial_evaluate(*value, bits.try_into().unwrap());
+
+    //         if bits == 0 {
+    //             break;
+    //         } else {
+    //             bits -= 1;
+    //         }
+    //     }
+
+    //     result.evaluation[0]
+    // }
+
+    pub fn evaluate(&self, values: Vec<F>) -> F {
+        // Clone `self` to get an owned copy of the polynomial
+        let mut result = self.clone();
+
+        // Calculate the number of bits
         let mut bits = result.evaluation.len().ilog2() - 1;
 
+        // Iterate over the values and partially evaluate the polynomial
         for value in values.iter() {
             result = result.partial_evaluate(*value, bits.try_into().unwrap());
 
@@ -85,7 +108,40 @@ impl<F: PrimeField> MultilinearPoly<F> {
             }
         }
 
+        // Return the final evaluation result
         result.evaluation[0]
+    }
+}
+
+impl<F: PrimeField> Add for MultilinearPoly<F> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut result = vec![F::zero(); self.evaluation.len().max(other.evaluation.len())];
+
+        for (i, &value) in self.evaluation.iter().enumerate() {
+            result[i] += value;
+        }
+
+        for (i, &value) in other.evaluation.iter().enumerate() {
+            result[i] += value;
+        }
+
+        MultilinearPoly::new(result)
+    }
+}
+
+impl<F: PrimeField> AddAssign for MultilinearPoly<F> {
+    fn add_assign(&mut self, other: Self) {
+        let mut result = vec![F::zero(); self.evaluation.len().max(other.evaluation.len())];
+
+        for (i, &value) in self.evaluation.iter().enumerate() {
+            result[i] += value;
+        }
+
+        for (i, &value) in other.evaluation.iter().enumerate() {
+            result[i] += value;
+        }
     }
 }
 
