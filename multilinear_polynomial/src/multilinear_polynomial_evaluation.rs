@@ -72,24 +72,6 @@ impl<F: PrimeField> MultilinearPoly<F> {
         Self::new(paired_evaluations)
     }
 
-    // pub fn evaluate(&self, values: Vec<F>) -> F {
-    //     let mut result = self;
-
-    //     let mut bits = result.evaluation.len().ilog2() - 1;
-
-    //     for value in values.iter() {
-    //         result = result.partial_evaluate(*value, bits.try_into().unwrap());
-
-    //         if bits == 0 {
-    //             break;
-    //         } else {
-    //             bits -= 1;
-    //         }
-    //     }
-
-    //     result.evaluation[0]
-    // }
-
     pub fn evaluate(&self, values: Vec<F>) -> F {
         let mut result = self.clone();
 
@@ -105,7 +87,6 @@ impl<F: PrimeField> MultilinearPoly<F> {
             }
         }
 
-        // Return the final evaluation result
         result.evaluation[0]
     }
 }
