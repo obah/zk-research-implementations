@@ -5,5 +5,4 @@ edition = "2021"
 
 [dependencies]
 ark-ff = "0.5.0"
-dusk-bls12_381 = "0.13.0"
-dusk-poseidon = "0.40.0"
+sha3 = "0.10.8"
