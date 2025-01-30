@@ -17,7 +17,7 @@ struct Verifier {
 }
 
 impl Prover {
-    fn new(polynomial: MultilinearPoly<Fq>) -> Self {
+    fn new(polynomial: &MultilinearPoly<Fq>) -> Self {
         let mut new_transcript = Transcript::new();
 
         let polynomial_bytes = fq_vec_to_bytes(&polynomial.evaluation);
@@ -53,25 +53,24 @@ impl Prover {
         poly_proof
     }
 
-    fn proof(&mut self, mut polynomial: MultilinearPoly<Fq>) -> Proof {
+    fn proof(&mut self, polynomial: &MultilinearPoly<Fq>) -> Proof {
         let num_of_rounds = polynomial.evaluation.len().ilog2();
 
         let mut claimed_sums = Vec::<Fq>::new();
         let mut proof_polynomials = Vec::<Vec<Fq>>::new();
+        let mut current_poly = polynomial.clone();
 
-        for i in 0..=num_of_rounds {
+        for _ in 0..num_of_rounds {
             //evaluate first one and
-            let claimed_sum = self.get_sum_proof(&polynomial.evaluation);
+            let claimed_sum = self.get_sum_proof(&current_poly.evaluation);
             claimed_sums.push(claimed_sum);
 
-            let proof_poly = self.get_partial_polynomial_proof(&polynomial.evaluation);
+            let proof_poly = self.get_partial_polynomial_proof(&current_poly.evaluation);
             proof_polynomials.push(proof_poly);
 
             let random_challenge = self.transcript.get_random_challenge();
 
-            let new_poly = polynomial.partial_evaluate(random_challenge, 0);
-
-            polynomial = new_poly;
+            current_poly = current_poly.partial_evaluate(random_challenge, 0);
         }
 
         Proof {
@@ -82,7 +81,7 @@ impl Prover {
 }
 
 impl Verifier {
-    fn new(polynomial: MultilinearPoly<Fq>, proof: Proof) -> Self {
+    fn new(polynomial: &MultilinearPoly<Fq>) -> Self {
         let mut new_transcript = Transcript::new();
 
         let polynomial_bytes = fq_vec_to_bytes(&polynomial.evaluation);
@@ -94,7 +93,7 @@ impl Verifier {
         }
     }
 
-    fn verify(&mut self, polynomial: MultilinearPoly<Fq>, proof: Proof) -> bool {
+    fn verify(&mut self, polynomial: &MultilinearPoly<Fq>, proof: Proof) -> bool {
         let mut random_challenges = Vec::new();
 
         for (i, poly) in proof.proof_polynomials.iter().enumerate() {
@@ -126,4 +125,52 @@ fn fq_vec_to_bytes(value: &Vec<Fq>) -> Vec<u8> {
         .collect();
 
     value_bytes
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Proof, Prover, Verifier};
+    use ark_bn254::Fq;
+    use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
+
+    #[test]
+    fn test_valid_proving_and_verification() {
+        let initial_polynomial = MultilinearPoly::new(vec![
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(2),
+            Fq::from(0),
+            Fq::from(10),
+            Fq::from(0),
+            Fq::from(17),
+        ]);
+
+        let mut prover = Prover::new(&initial_polynomial);
+        let proof = prover.proof(&initial_polynomial);
+
+        let mut verifier = Verifier::new(&initial_polynomial);
+        let verified = verifier.verify(&initial_polynomial, proof);
+
+        assert_eq!(verified, true);
+    }
+
+    #[test]
+    fn test_invalid_proof_doesnt_verify() {
+        let initial_polynomial =
+            MultilinearPoly::new(vec![Fq::from(0), Fq::from(3), Fq::from(2), Fq::from(5)]);
+
+        let false_proof = Proof {
+            claimed_sums: vec![Fq::from(20), Fq::from(9)],
+            proof_polynomials: vec![
+                vec![Fq::from(3), Fq::from(9)],
+                vec![Fq::from(1), Fq::from(2)],
+            ],
+        };
+
+        let mut verifier = Verifier::new(&initial_polynomial);
+        let verified = verifier.verify(&initial_polynomial, false_proof);
+
+        assert_eq!(verified, false);
+    }
 }
