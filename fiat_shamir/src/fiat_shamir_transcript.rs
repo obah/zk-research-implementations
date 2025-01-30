@@ -25,3 +25,19 @@ impl<F: PrimeField> Transcript<F> {
         F::from_le_bytes_mod_order(&final_hash)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Transcript;
+    use ark_bn254::Fq;
+
+    #[test]
+    fn it_hashes() {
+        let mut transcript: Transcript<Fq> = Transcript::new();
+        transcript.append("zero knowledge".as_bytes());
+
+        let random_challenge = transcript.get_random_challenge();
+
+        dbg!(random_challenge);
+    }
+}
