@@ -19,10 +19,12 @@ impl<F: PrimeField> Transcript<F> {
         self.hasher.update(preimage)
     }
 
-    pub fn get_random_challenge(&self) -> F {
-        let final_hash = self.hasher.clone().finalize(); //? this might be problematic
+    pub fn get_random_challenge(&mut self) -> F {
+        let random_challenge = self.hasher.clone().finalize(); //? this might be problematic
 
-        F::from_le_bytes_mod_order(&final_hash)
+        self.append(&random_challenge);
+
+        F::from_le_bytes_mod_order(&random_challenge)
     }
 }
 

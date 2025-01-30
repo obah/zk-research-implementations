@@ -4,44 +4,33 @@ use fiat_shamir::fiat_shamir_transcript::Transcript;
 use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
 
 struct Proof {
-    initial_poly: MultilinearPoly<Fq>,
-    claimed_sum: Fq,
-    proof_polys: Vec<Vec<Fq>>,
-    sum_proofs: Vec<Fq>,
+    proof_polynomials: Vec<Vec<Fq>>,
+    claimed_sums: Vec<Fq>,
 }
 
-struct SumCheck {
-    polynomial: MultilinearPoly<Fq>,
+struct Prover {
     transcript: Transcript<Fq>,
-    proof: Proof,
 }
 
-//// ! check and confirm the polynomial in sumcheck isnt being mutated anywhere
+struct Verifier {
+    transcript: Transcript<Fq>,
+}
 
-impl SumCheck {
-    fn new(poly: MultilinearPoly<Fq>) -> Self {
+impl Prover {
+    fn new(polynomial: MultilinearPoly<Fq>) -> Self {
         let mut new_transcript = Transcript::new();
 
-        let poly_bytes = fq_vec_to_bytes(&poly.evaluation);
+        let polynomial_bytes = fq_vec_to_bytes(&polynomial.evaluation);
 
-        new_transcript.append(&poly_bytes);
-
-        let new_proof = Proof {
-            initial_poly: poly.clone(),
-            claimed_sum: Fq::from(0),
-            proof_polys: Vec::new(),
-            sum_proofs: Vec::new(),
-        };
+        new_transcript.append(&polynomial_bytes);
 
         Self {
-            polynomial: poly,
             transcript: new_transcript,
-            proof: new_proof,
         }
     }
 
-    fn get_sum_proof(&mut self) -> Fq {
-        let sum_proof: Fq = self.polynomial.evaluation.iter().sum();
+    fn get_sum_proof(&mut self, polynomial: &Vec<Fq>) -> Fq {
+        let sum_proof: Fq = polynomial.iter().sum();
 
         let sum_bytes = fq_vec_to_bytes(&vec![sum_proof]);
 
@@ -50,72 +39,83 @@ impl SumCheck {
         sum_proof
     }
 
-    fn get_partial_polynomial_proof(&self) -> MultilinearPoly<Fq> {
-        let mid_point = self.polynomial.evaluation.len() / 2;
+    fn get_partial_polynomial_proof(&mut self, polynomial: &Vec<Fq>) -> Vec<Fq> {
+        let mid_point = polynomial.len() / 2;
 
-        let (zeros, ones) = self.polynomial.evaluation.split_at(mid_point);
+        let (zeros, ones) = polynomial.split_at(mid_point);
 
-        MultilinearPoly::new(vec![zeros.iter().sum(), ones.iter().sum()])
+        let poly_proof = vec![zeros.iter().sum(), ones.iter().sum()];
+
+        let poly_proof_bytes = fq_vec_to_bytes(&poly_proof);
+
+        self.transcript.append(&poly_proof_bytes);
+
+        poly_proof
     }
 
-    fn get_proof(&mut self) -> Proof {
-        let sum_proof = self.get_sum_proof();
-        let proof_poly = self.get_partial_polynomial_proof();
+    fn proof(&mut self, mut polynomial: MultilinearPoly<Fq>) -> Proof {
+        let num_of_rounds = polynomial.evaluation.len().ilog2();
 
-        let mut new_sum_proofs = self.proof.sum_proofs.clone();
-        new_sum_proofs.push(sum_proof);
+        let mut claimed_sums = Vec::<Fq>::new();
+        let mut proof_polynomials = Vec::<Vec<Fq>>::new();
 
-        let mut new_proof_polys = self.proof.proof_polys.clone();
-        new_proof_polys.push(proof_poly.evaluation);
+        for i in 0..=num_of_rounds {
+            //evaluate first one and
+            let claimed_sum = self.get_sum_proof(&polynomial.evaluation);
+            claimed_sums.push(claimed_sum);
+
+            let proof_poly = self.get_partial_polynomial_proof(&polynomial.evaluation);
+            proof_polynomials.push(proof_poly);
+
+            let random_challenge = self.transcript.get_random_challenge();
+
+            let new_poly = polynomial.partial_evaluate(random_challenge, 0);
+
+            polynomial = new_poly;
+        }
 
         Proof {
-            initial_poly: self.polynomial.clone(),
-            claimed_sum: sum_proof,
-            proof_polys: new_proof_polys,
-            sum_proofs: new_sum_proofs,
+            proof_polynomials,
+            claimed_sums,
+        }
+    }
+}
+
+impl Verifier {
+    fn new(polynomial: MultilinearPoly<Fq>, proof: Proof) -> Self {
+        let mut new_transcript = Transcript::new();
+
+        let polynomial_bytes = fq_vec_to_bytes(&polynomial.evaluation);
+
+        new_transcript.append(&polynomial_bytes);
+
+        Self {
+            transcript: new_transcript,
         }
     }
 
-    fn verify_proof(&mut self, proof: Proof) -> bool {
-        if proof.proof_polys.last().iter().len() == 1 {
-            let mut random_challenges = Vec::new();
+    fn verify(&mut self, polynomial: MultilinearPoly<Fq>, proof: Proof) -> bool {
+        let mut random_challenges = Vec::new();
 
-            for (i, poly) in proof.proof_polys.iter().enumerate() {
-                let poly_bytes = fq_vec_to_bytes(poly);
-                let sum_bytes = fq_vec_to_bytes(&vec![proof.sum_proofs[i]]);
+        for (i, poly) in proof.proof_polynomials.iter().enumerate() {
+            let poly_bytes = fq_vec_to_bytes(poly);
+            let sum_bytes = fq_vec_to_bytes(&vec![proof.claimed_sums[i]]);
 
-                self.transcript.append(&poly_bytes);
-                self.transcript.append(&sum_bytes);
+            self.transcript.append(&poly_bytes);
+            self.transcript.append(&sum_bytes);
 
-                let random_challenge = self.transcript.get_random_challenge();
+            let random_challenge = self.transcript.get_random_challenge();
 
-                random_challenges.push(random_challenge);
+            random_challenges.push(random_challenge);
 
-                let multi_poly = MultilinearPoly::new(poly.to_vec());
+            let multi_poly = MultilinearPoly::new(poly.to_vec());
 
-                multi_poly.partial_evaluate(random_challenge, 0);
-            }
-
-            let poly_eval_sum = self.polynomial.evaluate(random_challenges);
-
-            proof.proof_polys.last().unwrap()[0] == poly_eval_sum
-        } else {
-            let last_poly = MultilinearPoly::new(proof.proof_polys.last().unwrap().to_vec());
-            let eval_0 = last_poly.evaluate(vec![Fq::from(0)]);
-            let eval_1 = last_poly.evaluate(vec![Fq::from(1)]);
-
-            let poly_sum = eval_0 + eval_1;
-
-            *proof.sum_proofs.last().unwrap() == poly_sum
+            multi_poly.partial_evaluate(random_challenge, 0);
         }
-    }
 
-    fn initiate_next_round(&self) -> MultilinearPoly<Fq> {
-        let random_challenge = self.transcript.get_random_challenge();
+        let poly_eval_sum = polynomial.evaluate(random_challenges);
 
-        let new_poly = self.polynomial.partial_evaluate(random_challenge, 0);
-
-        new_poly
+        proof.proof_polynomials.last().unwrap()[0] == poly_eval_sum
     }
 }
 
