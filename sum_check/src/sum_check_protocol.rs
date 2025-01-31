@@ -54,14 +54,13 @@ impl Prover {
     }
 
     fn proof(&mut self, polynomial: &MultilinearPoly<Fq>) -> Proof {
-        let num_of_rounds = polynomial.evaluation.len().ilog2();
+        let num_of_rounds = polynomial.evaluation.len().ilog2() - 1;
 
         let mut claimed_sums = Vec::<Fq>::new();
         let mut proof_polynomials = Vec::<Vec<Fq>>::new();
         let mut current_poly = polynomial.clone();
 
         for _ in 0..num_of_rounds {
-            //evaluate first one and
             let claimed_sum = self.get_sum_proof(&current_poly.evaluation);
             claimed_sums.push(claimed_sum);
 
