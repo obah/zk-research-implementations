@@ -6,4 +6,9 @@ edition = "2021"
 [dependencies]
 ark-bn254 = "0.5.0"
 ark-ff = "0.5.0"
+criterion = "0.5.1"
+
+[[bench]]
+name = "multilinear_poly_benchmark"
+harness = false
 

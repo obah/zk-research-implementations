@@ -3,8 +3,8 @@ use ark_ff::{BigInteger, PrimeField};
 use fiat_shamir::fiat_shamir_transcript::Transcript;
 use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
 
-#[derive(Debug)]
-struct Proof {
+#[derive(Debug, Clone)]
+pub struct Proof {
     proof_polynomials: Vec<Vec<Fq>>,
     claimed_sum: Fq,
 }
@@ -18,7 +18,7 @@ fn get_round_partial_polynomial_proof(polynomial: &[Fq]) -> Vec<Fq> {
     poly_proof
 }
 
-fn prove(polynomial: &MultilinearPoly<Fq>) -> Proof {
+pub fn prove(polynomial: &MultilinearPoly<Fq>) -> Proof {
     let mut transcript = Transcript::<Fq>::new();
     transcript.append(&fq_vec_to_bytes(&polynomial.evaluation));
 
@@ -47,7 +47,7 @@ fn prove(polynomial: &MultilinearPoly<Fq>) -> Proof {
     }
 }
 
-fn verify(polynomial: &MultilinearPoly<Fq>, proof: Proof) -> bool {
+pub fn verify(polynomial: &MultilinearPoly<Fq>, proof: Proof) -> bool {
     let mut transcript = Transcript::<Fq>::new();
     transcript.append(&fq_vec_to_bytes(&polynomial.evaluation));
     transcript.append(&fq_vec_to_bytes(&[proof.claimed_sum]));

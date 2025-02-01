@@ -21,12 +21,12 @@ impl<F: PrimeField> MultilinearPoly<F> {
         }
     }
 
-    fn pair_points(index: usize, num_of_vars: usize) -> Vec<(usize, usize)> {
+    fn pair_points(bit: usize, num_of_vars: usize) -> Vec<(usize, usize)> {
         let mut result = vec![];
         let target_hc = num_of_vars - 1;
 
         for val in 0..(1 << target_hc) {
-            let inverted_index = num_of_vars - index - 1;
+            let inverted_index = num_of_vars - bit - 1;
             let insert_zero = insert_bit(val, inverted_index);
             let insert_one = insert_zero | (1 << inverted_index);
             result.push((insert_zero, insert_one));
@@ -85,7 +85,7 @@ fn insert_bit(value: usize, bit: usize) -> usize {
     let mask = (1 << bit) - 1;
     let low = value & mask;
 
-    high << bit + 1 | low
+    high << (bit + 1) | low
 }
 
 #[cfg(test)]
