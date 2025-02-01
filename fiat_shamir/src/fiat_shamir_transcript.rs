@@ -20,7 +20,7 @@ impl<F: PrimeField> Transcript<F> {
     }
 
     pub fn get_random_challenge(&mut self) -> F {
-        let random_challenge = self.hasher.clone().finalize(); //? this might be problematic
+        let random_challenge = self.hasher.finalize_reset();
 
         self.append(&random_challenge);
 
