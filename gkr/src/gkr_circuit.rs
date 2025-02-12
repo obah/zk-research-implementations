@@ -1,13 +1,13 @@
 use ark_ff::PrimeField;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Operation {
+pub enum Operation {
     Add,
     Mul,
 }
 
 impl Operation {
-    fn apply<F: PrimeField>(self, a: F, b: F) -> F {
+    pub fn apply<F: PrimeField>(self, a: F, b: F) -> F {
         match self {
             Operation::Add => a + b,
             Operation::Mul => a * b,
