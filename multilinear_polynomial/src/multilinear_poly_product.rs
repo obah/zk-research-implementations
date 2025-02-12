@@ -2,16 +2,18 @@ use ark_ff::PrimeField;
 
 use crate::multilinear_polynomial_evaluation::MultilinearPoly;
 
-struct ProductPoly<F: PrimeField> {
-    evaluation: Vec<MultilinearPoly<F>>,
+#[derive(Debug, PartialEq)]
+pub struct ProductPoly<F: PrimeField> {
+    pub evaluation: Vec<MultilinearPoly<F>>,
 }
 
-struct SumPoly<F: PrimeField> {
-    polys: Vec<ProductPoly<F>>,
+#[derive(Debug, PartialEq)]
+pub struct SumPoly<F: PrimeField> {
+    pub polys: Vec<ProductPoly<F>>,
 }
 
 impl<F: PrimeField> ProductPoly<F> {
-    fn new(evaluations: Vec<Vec<F>>) -> Self {
+    pub fn new(evaluations: Vec<Vec<F>>) -> Self {
         let length_1 = evaluations[0].len();
 
         if evaluations.iter().any(|eval| eval.len() != length_1) {
@@ -58,7 +60,7 @@ impl<F: PrimeField> ProductPoly<F> {
 }
 
 impl<F: PrimeField> SumPoly<F> {
-    fn new(polys: Vec<ProductPoly<F>>) -> Self {
+    pub fn new(polys: Vec<ProductPoly<F>>) -> Self {
         let degree_1 = polys[0].get_degree();
         if polys.iter().any(|poly| poly.get_degree() != degree_1) {
             panic!("all product polys must have same degree");

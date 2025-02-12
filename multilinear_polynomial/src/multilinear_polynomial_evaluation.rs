@@ -1,7 +1,7 @@
 use ark_ff::PrimeField;
 use std::ops::Add;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MultilinearPoly<F: PrimeField> {
     pub evaluation: Vec<F>,
     num_of_vars: usize,

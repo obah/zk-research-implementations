@@ -1,4 +1,5 @@
 use ark_ff::PrimeField;
+use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
@@ -50,18 +51,19 @@ impl<F: PrimeField> Layer<F> {
         self.gates.iter().map(|gate| gate.output).collect()
     }
 
-    fn get_add_mul_i(&self, op: Operation) -> Vec<u8> {
+    fn get_add_mul_i(&self, op: Operation) -> MultilinearPoly<F> {
         let n_bits = self.get_bits_for_gates();
         let layer_size = 1 << n_bits;
-        let mut poly_eval = vec![0; layer_size];
+        let mut poly_eval = vec![F::zero(); layer_size];
 
         let gate_values = self.gate_to_bits();
         for (gate_value, gate) in gate_values.into_iter().zip(&self.gates) {
             if gate.op == op {
-                poly_eval[gate_value] = 1;
+                poly_eval[gate_value] = F::one();
             }
         }
-        poly_eval
+
+        MultilinearPoly::new(poly_eval)
     }
 
     fn get_bits_for_gates(&self) -> u32 {
@@ -69,7 +71,7 @@ impl<F: PrimeField> Layer<F> {
         assert!(n_gates > 0, "There must be at least one gate in the layer.");
 
         if n_gates == 1 {
-            3 //?no need to recalulate this since I always know the value
+            3
         } else {
             let n_gates_log = n_gates.ilog2();
             let n_bits = n_gates_log + 1;
@@ -191,14 +193,23 @@ mod test {
         let layer_1 = Layer::new(vec![gate_1]);
         let layer_2 = Layer::new(vec![gate_2]);
 
-        let expected_add_1_poly = vec![0, 1, 0, 0, 0, 0, 0, 0];
-        let expected_add_2_poly = vec![0, 0, 0, 0, 0, 0, 0, 0];
+        let expected_add_1_poly = vec![
+            Fq::from(0),
+            Fq::from(1),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+        ];
+        let expected_add_2_poly = vec![Fq::from(0); 8];
 
         let add_1_poly = layer_1.get_add_mul_i(Operation::Add);
         let add_2_poly = layer_2.get_add_mul_i(Operation::Add);
 
-        assert_eq!(expected_add_1_poly, add_1_poly);
-        assert_eq!(expected_add_2_poly, add_2_poly);
+        assert_eq!(expected_add_1_poly, add_1_poly.evaluation);
+        assert_eq!(expected_add_2_poly, add_2_poly.evaluation);
     }
 
     #[test]
@@ -209,13 +220,22 @@ mod test {
         let layer_1 = Layer::new(vec![gate_1]);
         let layer_2 = Layer::new(vec![gate_2]);
 
-        let expected_mul_1_poly = vec![0, 0, 0, 0, 0, 0, 0, 0];
-        let expected_mul_2_poly = vec![0, 1, 0, 0, 0, 0, 0, 0];
+        let expected_mul_1_poly = vec![Fq::from(0); 8];
+        let expected_mul_2_poly = vec![
+            Fq::from(0),
+            Fq::from(1),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+            Fq::from(0),
+        ];
 
         let mul_1_poly = layer_1.get_add_mul_i(Operation::Mul);
         let mul_2_poly = layer_2.get_add_mul_i(Operation::Mul);
 
-        assert_eq!(expected_mul_1_poly, mul_1_poly);
-        assert_eq!(expected_mul_2_poly, mul_2_poly);
+        assert_eq!(expected_mul_1_poly, mul_1_poly.evaluation);
+        assert_eq!(expected_mul_2_poly, mul_2_poly.evaluation);
     }
 }
