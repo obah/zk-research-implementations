@@ -2,12 +2,12 @@ use ark_ff::PrimeField;
 
 use crate::multilinear_polynomial_evaluation::MultilinearPoly;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProductPoly<F: PrimeField> {
     pub evaluation: Vec<MultilinearPoly<F>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SumPoly<F: PrimeField> {
     pub polys: Vec<ProductPoly<F>>,
 }
@@ -49,13 +49,19 @@ impl<F: PrimeField> ProductPoly<F> {
         Self::new(partial_polys)
     }
 
-    fn get_degree(&self) -> u8 {
-        //chech if the variable exists in both polys
-        //if yes, its 2
-        //if no its 1
-        ////! might not work tho
-        //? seems like this should degree of variable
-        todo!()
+    fn reduce(&self) -> Vec<F> {
+        let poly_a = &self.evaluation[0].evaluation;
+        let poly_b = &self.evaluation[1].evaluation;
+
+        poly_a
+            .iter()
+            .zip(poly_b.iter())
+            .map(|(a, b)| *a * *b)
+            .collect()
+    }
+
+    fn get_degree(&self) -> usize {
+        self.evaluation.len()
     }
 }
 
@@ -69,14 +75,14 @@ impl<F: PrimeField> SumPoly<F> {
         Self { polys }
     }
 
-    fn evaluate(&self, values: Vec<F>) -> F {
+    pub fn evaluate(&self, values: Vec<F>) -> F {
         self.polys
             .iter()
             .map(|poly| poly.evaluate(values.clone()))
             .sum()
     }
 
-    fn partial_evaluate(&self, value: &F) -> Self {
+    pub fn partial_evaluate(&self, value: &F) -> Self {
         let partial_polys = self
             .polys
             .iter()
@@ -86,7 +92,20 @@ impl<F: PrimeField> SumPoly<F> {
         Self::new(partial_polys)
     }
 
-    fn get_degree(&self) -> u8 {
+    pub fn reduce(&self) -> Vec<F> {
+        let poly_a = &self.polys[0].reduce();
+        let poly_b = &self.polys[1].reduce();
+
+        let result = poly_a
+            .iter()
+            .zip(poly_b.iter())
+            .map(|(a, b)| *a + *b)
+            .collect();
+
+        result
+    }
+
+    pub fn get_degree(&self) -> usize {
         self.polys[0].get_degree()
     }
 }

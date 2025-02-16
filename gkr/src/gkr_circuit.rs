@@ -17,11 +17,11 @@ impl Operation {
 }
 
 #[derive(Debug, Clone)]
-struct Gate<F: PrimeField> {
-    l_input: F,
-    r_input: F,
-    output: F,
-    op: Operation,
+pub struct Gate<F: PrimeField> {
+    pub l_input: F,
+    pub r_input: F,
+    pub output: F,
+    pub op: Operation,
 }
 
 impl<F: PrimeField> Gate<F> {
@@ -38,8 +38,8 @@ impl<F: PrimeField> Gate<F> {
 }
 
 #[derive(Debug, Clone)]
-struct Layer<F: PrimeField> {
-    gates: Vec<Gate<F>>,
+pub struct Layer<F: PrimeField> {
+    pub gates: Vec<Gate<F>>,
 }
 
 impl<F: PrimeField> Layer<F> {
@@ -47,11 +47,11 @@ impl<F: PrimeField> Layer<F> {
         Self { gates }
     }
 
-    fn get_layer_poly(&self) -> Vec<F> {
+    pub fn get_layer_poly(&self) -> Vec<F> {
         self.gates.iter().map(|gate| gate.output).collect()
     }
 
-    fn get_add_mul_i(&self, op: Operation) -> MultilinearPoly<F> {
+    pub fn get_add_mul_i(&self, op: Operation) -> MultilinearPoly<F> {
         let n_bits = self.get_bits_for_gates();
         let layer_size = 1 << n_bits;
         let mut poly_eval = vec![F::zero(); layer_size];
@@ -89,8 +89,8 @@ impl<F: PrimeField> Layer<F> {
 }
 
 #[derive(Debug, Clone)]
-struct Circuit<F: PrimeField> {
-    layers: Vec<Layer<F>>,
+pub struct Circuit<F: PrimeField> {
+    pub layers: Vec<Layer<F>>,
 }
 
 impl<F: PrimeField> Circuit<F> {
@@ -108,7 +108,7 @@ impl<F: PrimeField> Circuit<F> {
         Self { layers }
     }
 
-    fn evaluate(&mut self, inputs: Vec<F>) -> Vec<Vec<F>> {
+    pub fn evaluate(&mut self, inputs: Vec<F>) -> Vec<Vec<F>> {
         let mut result = Vec::new();
         let mut current_inputs = inputs;
 

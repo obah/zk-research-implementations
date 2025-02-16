@@ -440,6 +440,7 @@ dependencies = [
  "ark-ff",
  "fiat_shamir",
  "multilinear_polynomial",
+ "sum_check",
 ]
 
 [[package]]

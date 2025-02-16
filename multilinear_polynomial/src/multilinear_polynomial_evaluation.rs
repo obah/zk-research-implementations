@@ -60,6 +60,12 @@ impl<F: PrimeField> MultilinearPoly<F> {
 
         result.evaluation[0]
     }
+
+    pub fn scale(&self, value: F) -> Self {
+        let result = self.evaluation.iter().map(|eval| *eval * value).collect();
+
+        Self::new(result)
+    }
 }
 
 impl<F: PrimeField> Add for MultilinearPoly<F> {
