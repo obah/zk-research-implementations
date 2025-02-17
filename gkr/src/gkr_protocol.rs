@@ -16,7 +16,7 @@ struct Proof {
     claimed_evaluations: Vec<(Fq, Fq)>,
 }
 
-fn prove(mut circuit: Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
+fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
     let mut transcript = Transcript::<Fq>::new();
 
     let circuit_evaluations = circuit.evaluate(inputs);
@@ -105,8 +105,7 @@ fn verify(proof: Proof, circuit: Circuit<Fq>) -> bool {
 
     let mut current_claim = proof.claimed_sum;
 
-    ////! change this
-    for i in 0..10 {
+    for i in 0..circuit.layers.len() {
         let sum_check_verify = gkr_verify(
             proof.proof_polynomials[i].clone(),
             current_claim,
@@ -244,8 +243,8 @@ fn get_merged_fbc_poly(
 
 #[cfg(test)]
 mod test {
-    use super::{add_mul_polynomials, get_fbc_poly};
-    use crate::gkr_circuit::Operation;
+    use super::{add_mul_polynomials, get_fbc_poly, prove, verify, Proof};
+    use crate::gkr_circuit::{Circuit, Operation};
     use ark_bn254::Fq;
     use multilinear_polynomial::{
         composed_polynomial::{ProductPoly, SumPoly},
@@ -342,5 +341,74 @@ mod test {
         let expected_result = SumPoly::new(vec![one, two]);
 
         assert_eq!(fbc_poly.polys, expected_result.polys);
+    }
+
+    #[test]
+    fn test_valid_proving_and_verification() {
+        let circuit_structure: Vec<Vec<Operation>> = vec![
+            vec![
+                Operation::Mul,
+                Operation::Mul,
+                Operation::Mul,
+                Operation::Mul,
+            ],
+            vec![Operation::Add, Operation::Add],
+            vec![Operation::Add],
+        ];
+
+        let inputs: Vec<Fq> = vec![
+            Fq::from(5),
+            Fq::from(2),
+            Fq::from(2),
+            Fq::from(4),
+            Fq::from(10),
+            Fq::from(0),
+            Fq::from(3),
+            Fq::from(3),
+        ];
+
+        let mut circuit = Circuit::new(circuit_structure);
+
+        let proof = prove(&mut circuit, inputs);
+
+        let is_verified = verify(proof, circuit);
+
+        assert_eq!(is_verified, true);
+    }
+
+    #[test]
+    fn test_verify_invalid_proof() {
+        let circuit_structure: Vec<Vec<Operation>> = vec![
+            vec![
+                Operation::Mul,
+                Operation::Mul,
+                Operation::Mul,
+                Operation::Mul,
+            ],
+            vec![Operation::Add, Operation::Add],
+            vec![Operation::Add],
+        ];
+
+        let circuit = Circuit::new(circuit_structure);
+
+        let invalid_proof = Proof {
+            output_poly: MultilinearPoly::new(vec![Fq::from(10)]),
+            claimed_sum: Fq::from(5),
+            proof_polynomials: vec![
+                vec![
+                    vec![Fq::from(10), Fq::from(5)],
+                    vec![Fq::from(2), Fq::from(3)],
+                ],
+                vec![
+                    vec![Fq::from(10), Fq::from(5)],
+                    vec![Fq::from(2), Fq::from(3)],
+                ],
+            ],
+            claimed_evaluations: vec![(Fq::from(10), Fq::from(5)), (Fq::from(1), Fq::from(2))],
+        };
+
+        let is_verified = verify(invalid_proof, circuit);
+
+        assert_eq!(is_verified, false);
     }
 }

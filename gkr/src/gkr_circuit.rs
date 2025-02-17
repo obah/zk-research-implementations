@@ -94,7 +94,7 @@ pub struct Circuit<F: PrimeField> {
 }
 
 impl<F: PrimeField> Circuit<F> {
-    fn new(structure: Vec<Vec<Operation>>) -> Self {
+    pub fn new(structure: Vec<Vec<Operation>>) -> Self {
         let layers = structure
             .into_iter()
             .map(|ops_layer| {
