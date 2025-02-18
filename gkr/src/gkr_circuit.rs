@@ -80,11 +80,42 @@ impl<F: PrimeField> Layer<F> {
     }
 
     fn gate_to_bits(&self) -> Vec<usize> {
-        self.gates
-            .iter()
-            .enumerate()
-            .map(|(i, _)| 5 * i + 1)
-            .collect()
+        let n_gates = self.gates.len();
+        let n_gates_log = n_gates.ilog2();
+
+        let mut gate_decimal_values = Vec::new();
+
+        for (idx, _) in self.gates.iter().enumerate() {
+            let mut gate_binary_values = Vec::new();
+
+            gate_binary_values.push(idx);
+            gate_binary_values.push(2 * idx);
+            gate_binary_values.push(2 * idx + 1);
+
+            let segments: Vec<(usize, u32)> = gate_binary_values
+                .iter()
+                .enumerate()
+                .map(|(i, val)| {
+                    if n_gates == 1 {
+                        (*val, 1)
+                    } else {
+                        if i == 0 {
+                            (*val, n_gates_log)
+                        } else {
+                            (*val, n_gates_log + 1)
+                        }
+                    }
+                })
+                .collect();
+
+            let decimal_value = segments
+                .iter()
+                .fold(0, |acc, &(value, width)| (acc << width) | value);
+
+            gate_decimal_values.push(decimal_value);
+        }
+
+        gate_decimal_values
     }
 }
 
@@ -108,9 +139,9 @@ impl<F: PrimeField> Circuit<F> {
         Self { layers }
     }
 
-    pub fn evaluate(&mut self, inputs: Vec<F>) -> Vec<Vec<F>> {
+    pub fn evaluate(&mut self, inputs: &[F]) -> Vec<Vec<F>> {
         let mut result = Vec::new();
-        let mut current_inputs = inputs;
+        let mut current_inputs = inputs.to_vec();
 
         for layer in &mut self.layers {
             for (gate, input_pair) in layer.gates.iter_mut().zip(current_inputs.chunks_exact(2)) {
@@ -164,7 +195,7 @@ mod test {
 
         let mut circuit = Circuit::new(structure);
 
-        let evaluations = circuit.evaluate(inputs);
+        let evaluations = circuit.evaluate(&inputs);
 
         assert_eq!(evaluations, expected_evaluations);
     }
