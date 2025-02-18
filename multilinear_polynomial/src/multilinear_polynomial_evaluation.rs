@@ -1,10 +1,10 @@
 use ark_ff::PrimeField;
-use std::ops::Add;
+use std::ops::{Add, Mul};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MultilinearPoly<F: PrimeField> {
     pub evaluation: Vec<F>,
-    num_of_vars: usize,
+    pub num_of_vars: usize,
 }
 
 impl<F: PrimeField> MultilinearPoly<F> {
@@ -72,15 +72,27 @@ impl<F: PrimeField> Add for MultilinearPoly<F> {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        let mut result = vec![F::zero(); self.evaluation.len().max(other.evaluation.len())];
+        let result = self
+            .evaluation
+            .iter()
+            .zip(other.evaluation.iter())
+            .map(|(a, b)| *a + *b)
+            .collect();
 
-        for (i, &value) in self.evaluation.iter().enumerate() {
-            result[i] += value;
-        }
+        MultilinearPoly::new(result)
+    }
+}
 
-        for (i, &value) in other.evaluation.iter().enumerate() {
-            result[i] += value;
-        }
+impl<F: PrimeField> Mul for MultilinearPoly<F> {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
+        let result = self
+            .evaluation
+            .iter()
+            .zip(other.evaluation.iter())
+            .map(|(a, b)| *a * *b)
+            .collect();
 
         MultilinearPoly::new(result)
     }

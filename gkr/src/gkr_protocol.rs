@@ -9,17 +9,17 @@ use multilinear_polynomial::{
 };
 use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 
-struct Proof {
+pub struct Proof {
     output_poly: MultilinearPoly<Fq>,
     claimed_sum: Fq,
     proof_polynomials: Vec<Vec<Vec<Fq>>>,
     claimed_evaluations: Vec<(Fq, Fq)>,
 }
 
-fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
+pub fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
     let mut transcript = Transcript::<Fq>::new();
 
-    let circuit_evaluations = circuit.evaluate(inputs);
+    let mut circuit_evaluations = circuit.evaluate(&inputs);
 
     let mut w_0 = circuit_evaluations.last().unwrap().to_vec();
 
@@ -44,17 +44,26 @@ fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
     let mut current_rb = Fq::from(0);
     let mut current_rc = Fq::from(0);
 
+    circuit_evaluations.reverse();
+
     for idx in 0..circuit.layers.len() {
-        let layers = &circuit.layers;
+        let mut layers = circuit.layers.clone();
+        layers.reverse();
 
         let add_i = layers[idx].get_add_mul_i(Operation::Add);
         let mul_i = layers[idx].get_add_mul_i(Operation::Mul);
 
-        let w_i = layers[idx + 1].get_layer_poly();
+        let w_i = if idx + 1 < circuit.layers.len() {
+            circuit_evaluations[idx + 1].clone()
+        } else {
+            inputs.clone()
+        };
 
         let fbc_poly: SumPoly<Fq> = if idx == 0 {
             get_fbc_poly(random_challenge, add_i, mul_i, &w_i, &w_i)
+            ////! ////////////correct up to here
         } else {
+            ////! this throws the error
             get_merged_fbc_poly(
                 add_i,
                 mul_i,
@@ -179,6 +188,7 @@ fn add_mul_polynomials(poly_a: &[Fq], poly_b: &[Fq], op: Operation) -> Multiline
     MultilinearPoly::new(new_eval)
 }
 
+////! verified as correct
 fn get_fbc_poly(
     random_challenge: Fq,
     add_i: MultilinearPoly<Fq>,
@@ -222,11 +232,9 @@ fn get_merged_fbc_poly(
     let summed_w_poly = add_mul_polynomials(w_b, w_c, Operation::Add);
     let multiplied_w_poly = add_mul_polynomials(w_b, w_c, Operation::Mul);
 
-    let summed_add_i =
-        add_mul_polynomials(&add_i_rb.evaluation, &add_i_rc.evaluation, Operation::Add);
+    let summed_add_i = add_i_rb + add_i_rc;
 
-    let summed_mul_i =
-        add_mul_polynomials(&mul_i_rb.evaluation, &mul_i_rc.evaluation, Operation::Add);
+    let summed_mul_i = mul_i_rb + mul_i_rc;
 
     let add_product_poly = ProductPoly::new(vec![
         summed_add_i.evaluation,

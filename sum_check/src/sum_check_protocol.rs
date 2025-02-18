@@ -3,6 +3,7 @@ use fiat_shamir::fiat_shamir_transcript::{fq_vec_to_bytes, Transcript};
 use multilinear_polynomial::{
     composed_polynomial::SumPoly, multilinear_polynomial_evaluation::MultilinearPoly,
 };
+use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
 #[derive(Debug, Clone)]
 pub struct Proof {
@@ -33,7 +34,13 @@ fn get_round_partial_polynomial_proof_gkr(composed_poly: &SumPoly<Fq>) -> Vec<Fq
         poly_proof.push(eval);
     }
 
-    poly_proof
+    let points = poly_proof
+        .iter()
+        .enumerate()
+        .map(|(i, y)| (Fq::from(i as u64), *y))
+        .collect();
+
+    UnivariatePoly::interpolate(points).coefficient
 }
 
 fn get_round_partial_polynomial_proof(polynomial: &[Fq]) -> Vec<Fq> {
@@ -52,7 +59,7 @@ pub fn prove(polynomial: &MultilinearPoly<Fq>) -> Proof {
     let claimed_sum: Fq = polynomial.evaluation.iter().sum();
     transcript.append(&fq_vec_to_bytes(&[claimed_sum]));
 
-    let num_rounds = polynomial.evaluation.len().ilog2();
+    let num_rounds = polynomial.num_of_vars;
     let mut proof_polynomials = Vec::with_capacity(num_rounds as usize);
     let mut current_poly = polynomial.clone();
 
@@ -105,32 +112,25 @@ pub fn verify(polynomial: &MultilinearPoly<Fq>, proof: Proof) -> bool {
     expected_sum == poly_eval_sum
 }
 
+////! verified correct
 pub fn gkr_prove(
     claimed_sum: Fq,
     composed_polynomial: &SumPoly<Fq>,
     transcript: &mut Transcript<Fq>,
 ) -> GkrProof {
-    // for polys in &composed_polynomial.polys {
-    //     for poly in polys.evaluation.clone() {
-    //         transcript.append(&fq_vec_to_bytes(&poly.evaluation));
-    //     }
-    // }
-
-    // transcript.append(&fq_vec_to_bytes(&[claimed_sum]));
-
-    let num_rounds = composed_polynomial.polys[0].evaluation.len().ilog2();
+    let num_rounds = composed_polynomial.polys[0].evaluation[0].num_of_vars;
     let mut proof_polynomials = Vec::with_capacity(num_rounds as usize);
     let mut current_poly = composed_polynomial.clone();
     let mut random_challenges = Vec::new();
 
-    for i in 0..num_rounds {
+    for _ in 0..num_rounds {
         let proof_poly = get_round_partial_polynomial_proof_gkr(&current_poly); //this is f(b)
 
         transcript.append(&fq_vec_to_bytes(&proof_poly));
 
         proof_polynomials.push(proof_poly);
 
-        let random_challenge = transcript.get_random_challenge();
+        let random_challenge = transcript.get_random_challenge(); //this is r1 and r2
 
         random_challenges.push(random_challenge);
 
@@ -144,19 +144,12 @@ pub fn gkr_prove(
     }
 }
 
+////! verified correct
 pub fn gkr_verify(
     round_polys: Vec<Vec<Fq>>,
-    claimed_sum: Fq,
+    mut claimed_sum: Fq,
     mut transcript: Transcript<Fq>,
 ) -> GkrVerify {
-    // for polys in &composed_poly.polys {
-    //     for poly in polys.evaluation.clone() {
-    //         transcript.append(&fq_vec_to_bytes(&poly.evaluation));
-    //     }
-    // }
-
-    let mut expected_sum = claimed_sum;
-
     let mut random_challenges = Vec::new();
 
     for poly in round_polys {
@@ -165,7 +158,7 @@ pub fn gkr_verify(
         let f_b_0 = round_poly.evaluate(vec![Fq::from(0)]);
         let f_b_1 = round_poly.evaluate(vec![Fq::from(1)]);
 
-        if f_b_0 + f_b_1 != expected_sum {
+        if f_b_0 + f_b_1 != claimed_sum {
             return GkrVerify {
                 verified: false,
                 final_claimed_sum: Fq::from(0),
@@ -179,12 +172,12 @@ pub fn gkr_verify(
 
         random_challenges.push(r_c);
 
-        expected_sum = round_poly.evaluate(vec![r_c]);
+        claimed_sum = round_poly.evaluate(vec![r_c]); //next expected sum
     }
 
     GkrVerify {
         verified: true,
-        final_claimed_sum: expected_sum,
+        final_claimed_sum: claimed_sum,
         random_challenges,
     }
 }

@@ -819,6 +819,7 @@ dependencies = [
  "criterion",
  "fiat_shamir",
  "multilinear_polynomial",
+ "univariate_polynomial",
 ]
 
 [[package]]

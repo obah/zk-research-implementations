@@ -50,14 +50,7 @@ impl<F: PrimeField> ProductPoly<F> {
     }
 
     fn reduce(&self) -> Vec<F> {
-        let poly_a = &self.evaluation[0].evaluation;
-        let poly_b = &self.evaluation[1].evaluation;
-
-        poly_a
-            .iter()
-            .zip(poly_b.iter())
-            .map(|(a, b)| *a * *b)
-            .collect()
+        (self.evaluation[0].clone() * self.evaluation[1].clone()).evaluation
     }
 
     fn get_degree(&self) -> usize {
