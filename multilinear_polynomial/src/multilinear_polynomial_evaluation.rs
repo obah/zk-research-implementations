@@ -35,7 +35,7 @@ impl<F: PrimeField> MultilinearPoly<F> {
     }
 
     pub fn partial_evaluate(&self, bit: usize, value: &F) -> Self {
-        let mut result = vec![];
+        let mut result: Vec<F> = Vec::new();
 
         for (a, b) in MultilinearPoly::<F>::pair_points(bit, self.num_of_vars).into_iter() {
             let a = self.evaluation[a];
@@ -45,6 +45,16 @@ impl<F: PrimeField> MultilinearPoly<F> {
         }
 
         Self::new(result)
+    }
+
+    pub fn multi_partial_evaluate(&self, values: &[F]) -> Self {
+        let mut poly = self.clone();
+
+        for value in values {
+            poly = poly.partial_evaluate(0, value);
+        }
+
+        poly
     }
 
     pub fn evaluate(&self, values: Vec<F>) -> F {

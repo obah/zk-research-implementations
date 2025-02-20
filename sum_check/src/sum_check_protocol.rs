@@ -22,36 +22,6 @@ pub struct GkrVerify {
     pub random_challenges: Vec<Fq>,
 }
 
-fn get_round_partial_polynomial_proof_gkr(composed_poly: &SumPoly<Fq>) -> Vec<Fq> {
-    let degree = composed_poly.get_degree();
-    let mut poly_proof = Vec::with_capacity(degree + 1);
-
-    for i in 0..degree {
-        let value = Fq::from(i as u64);
-        let partial_poly = composed_poly.partial_evaluate(&value);
-
-        let eval = partial_poly.reduce().iter().sum();
-        poly_proof.push(eval);
-    }
-
-    let points = poly_proof
-        .iter()
-        .enumerate()
-        .map(|(i, y)| (Fq::from(i as u64), *y))
-        .collect();
-
-    UnivariatePoly::interpolate(points).coefficient
-}
-
-fn get_round_partial_polynomial_proof(polynomial: &[Fq]) -> Vec<Fq> {
-    let mid_point = polynomial.len() / 2;
-    let (zeros, ones) = polynomial.split_at(mid_point);
-
-    let poly_proof = vec![zeros.iter().sum(), ones.iter().sum()];
-
-    poly_proof
-}
-
 pub fn prove(polynomial: &MultilinearPoly<Fq>) -> Proof {
     let mut transcript = Transcript::<Fq>::new();
     transcript.append(&fq_vec_to_bytes(&polynomial.evaluation));
@@ -109,6 +79,7 @@ pub fn verify(polynomial: &MultilinearPoly<Fq>, proof: Proof) -> bool {
     }
 
     let poly_eval_sum = polynomial.evaluate(random_challenges);
+
     expected_sum == poly_eval_sum
 }
 
@@ -130,7 +101,7 @@ pub fn gkr_prove(
 
         proof_polynomials.push(proof_poly);
 
-        let random_challenge = transcript.get_random_challenge(); //this is r1 and r2
+        let random_challenge = transcript.get_random_challenge(); //this is b and c aka r1 r2
 
         random_challenges.push(random_challenge);
 
@@ -180,6 +151,36 @@ pub fn gkr_verify(
         final_claimed_sum: claimed_sum,
         random_challenges,
     }
+}
+
+fn get_round_partial_polynomial_proof_gkr(composed_poly: &SumPoly<Fq>) -> Vec<Fq> {
+    let degree = composed_poly.get_degree();
+    let mut poly_proof = Vec::with_capacity(degree + 1);
+
+    for i in 0..degree {
+        let value = Fq::from(i as u64);
+        let partial_poly = composed_poly.partial_evaluate(&value);
+
+        let eval = partial_poly.reduce().iter().sum();
+        poly_proof.push(eval);
+    }
+
+    let points = poly_proof
+        .iter()
+        .enumerate()
+        .map(|(i, y)| (Fq::from(i as u64), *y))
+        .collect();
+
+    UnivariatePoly::interpolate(points).coefficient
+}
+
+fn get_round_partial_polynomial_proof(polynomial: &[Fq]) -> Vec<Fq> {
+    let mid_point = polynomial.len() / 2;
+    let (zeros, ones) = polynomial.split_at(mid_point);
+
+    let poly_proof = vec![zeros.iter().sum(), ones.iter().sum()];
+
+    poly_proof
 }
 
 #[cfg(test)]

@@ -16,10 +16,10 @@ pub struct Proof {
     claimed_evaluations: Vec<(Fq, Fq)>,
 }
 
-pub fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
+pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
     let mut transcript = Transcript::<Fq>::new();
 
-    let mut circuit_evaluations = circuit.evaluate(&inputs);
+    let mut circuit_evaluations = circuit.evaluate(inputs);
 
     let mut w_0 = circuit_evaluations.last().unwrap().to_vec();
 
@@ -41,8 +41,8 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
 
     let mut current_alpha = Fq::from(0);
     let mut current_beta = Fq::from(0);
-    let mut current_rb = Fq::from(0);
-    let mut current_rc = Fq::from(0);
+    let mut current_rb = Vec::new();
+    let mut current_rc = Vec::new();
 
     circuit_evaluations.reverse();
 
@@ -53,24 +53,23 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
         let add_i = layers[idx].get_add_mul_i(Operation::Add);
         let mul_i = layers[idx].get_add_mul_i(Operation::Mul);
 
-        let w_i = if idx + 1 < circuit.layers.len() {
-            circuit_evaluations[idx + 1].clone()
+        let w_i = if idx + 1 == circuit.layers.len() {
+            inputs.to_vec()
         } else {
-            inputs.clone()
+            circuit_evaluations[idx + 1].clone()
         };
 
         let fbc_poly: SumPoly<Fq> = if idx == 0 {
             get_fbc_poly(random_challenge, add_i, mul_i, &w_i, &w_i)
             ////! ////////////correct up to here
         } else {
-            ////! this throws the error
             get_merged_fbc_poly(
                 add_i,
                 mul_i,
                 &w_i,
                 &w_i,
-                current_rb,
-                current_rc,
+                &current_rb,
+                &current_rc,
                 current_alpha,
                 current_beta,
             )
@@ -80,13 +79,18 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
 
         proof_polys.push(sum_check_proof.proof_polynomials);
 
+        //? add a check to stop it from doing next poly for input layer
         let next_poly = MultilinearPoly::new(w_i);
 
-        let o_1 = next_poly.evaluate(vec![sum_check_proof.random_challenges[0]]);
-        let o_2 = next_poly.evaluate(vec![sum_check_proof.random_challenges[1]]);
+        let random_challenges = sum_check_proof.random_challenges;
 
-        current_rb = o_1;
-        current_rc = o_2;
+        let (r_b, r_c) = random_challenges.split_at(random_challenges.len() / 2);
+
+        let o_1 = next_poly.evaluate(r_b.to_vec());
+        let o_2 = next_poly.evaluate(r_c.to_vec());
+
+        current_rb = r_b.to_vec();
+        current_rc = r_c.to_vec();
 
         transcript.append(&fq_vec_to_bytes(&[o_1]));
         current_alpha = transcript.get_random_challenge();
@@ -107,10 +111,10 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: Vec<Fq>) -> Proof {
     }
 }
 
-fn verify(proof: Proof, circuit: Circuit<Fq>) -> bool {
+pub fn verify(proof: Proof, circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
     let mut transcript = Transcript::<Fq>::new();
 
-    let (_, _) = initiate_protocol(&mut transcript, &proof.output_poly);
+    initiate_protocol(&mut transcript, &proof.output_poly);
 
     let mut current_claim = proof.claimed_sum;
 
@@ -124,8 +128,6 @@ fn verify(proof: Proof, circuit: Circuit<Fq>) -> bool {
         if !sum_check_verify.verified {
             return false;
         }
-
-        let final_claimed_sum = sum_check_verify.final_claimed_sum;
 
         let layers = &circuit.layers;
         let add_i = layers[i].get_add_mul_i(Operation::Add);
@@ -151,10 +153,18 @@ fn verify(proof: Proof, circuit: Circuit<Fq>) -> bool {
 
         let next_layer_claim_poly = a_r * (o_1 + o_2) + m_r * (o_1 * o_2);
 
-        if next_layer_claim_poly == final_claimed_sum {
+        if next_layer_claim_poly == sum_check_verify.final_claimed_sum {
             current_claim = (alpha * o_1) + (beta * o_2);
+        } else {
+            return false;
         }
+
+        //get fbc poly to represent input layer
+        //run sumcheck on the fbc poly then evaluate everything using the inputs and if correct return true
     }
+
+    //? when it is done with looping, it can now perform the final oracle check itself
+    //? using the inputs
 
     //this is when verifier reaches the last layer (input layer), to be true if false is never returned
     return true;
@@ -216,23 +226,23 @@ fn get_merged_fbc_poly(
     mul_i: MultilinearPoly<Fq>,
     w_b: &[Fq],
     w_c: &[Fq],
-    r_b: Fq,
-    r_c: Fq,
+    r_b: &[Fq],
+    r_c: &[Fq],
     alpha: Fq,
     beta: Fq,
 ) -> SumPoly<Fq> {
-    let add_i_rb = add_i.partial_evaluate(0, &r_b).scale(alpha);
+    let add_i_rb = add_i.multi_partial_evaluate(r_b).scale(alpha);
 
-    let add_i_rc = add_i.partial_evaluate(0, &r_c).scale(beta);
+    let add_i_rc = add_i.multi_partial_evaluate(r_c).scale(beta);
 
-    let mul_i_rb = mul_i.partial_evaluate(0, &r_b).scale(alpha);
+    let mul_i_rb = mul_i.multi_partial_evaluate(r_b).scale(alpha);
 
-    let mul_i_rc = mul_i.partial_evaluate(0, &r_c).scale(beta);
+    let mul_i_rc = mul_i.multi_partial_evaluate(r_c).scale(beta);
 
     let summed_w_poly = add_mul_polynomials(w_b, w_c, Operation::Add);
     let multiplied_w_poly = add_mul_polynomials(w_b, w_c, Operation::Mul);
 
-    let summed_add_i = add_i_rb + add_i_rc;
+    let summed_add_i = add_i_rb.clone() + add_i_rc.clone();
 
     let summed_mul_i = mul_i_rb + mul_i_rc;
 
@@ -352,6 +362,9 @@ mod test {
     }
 
     #[test]
+    fn test_get_merged_fbc_poly() {}
+
+    #[test]
     fn test_valid_proving_and_verification() {
         let circuit_structure: Vec<Vec<Operation>> = vec![
             vec![
@@ -377,9 +390,9 @@ mod test {
 
         let mut circuit = Circuit::new(circuit_structure);
 
-        let proof = prove(&mut circuit, inputs);
+        let proof = prove(&mut circuit, &inputs);
 
-        let is_verified = verify(proof, circuit);
+        let is_verified = verify(proof, circuit, &inputs);
 
         assert_eq!(is_verified, true);
     }
@@ -395,6 +408,17 @@ mod test {
             ],
             vec![Operation::Add, Operation::Add],
             vec![Operation::Add],
+        ];
+
+        let inputs: Vec<Fq> = vec![
+            Fq::from(5),
+            Fq::from(2),
+            Fq::from(2),
+            Fq::from(4),
+            Fq::from(10),
+            Fq::from(0),
+            Fq::from(3),
+            Fq::from(3),
         ];
 
         let circuit = Circuit::new(circuit_structure);
@@ -415,7 +439,7 @@ mod test {
             claimed_evaluations: vec![(Fq::from(10), Fq::from(5)), (Fq::from(1), Fq::from(2))],
         };
 
-        let is_verified = verify(invalid_proof, circuit);
+        let is_verified = verify(invalid_proof, circuit, &inputs);
 
         assert_eq!(is_verified, false);
     }
