@@ -441,6 +441,7 @@ dependencies = [
  "fiat_shamir",
  "multilinear_polynomial",
  "sum_check",
+ "univariate_polynomial",
 ]
 
 [[package]]

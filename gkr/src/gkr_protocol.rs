@@ -1,4 +1,5 @@
 use crate::gkr_circuit::{Circuit, Operation};
+use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
 use ark_bn254::Fq;
 
@@ -12,7 +13,7 @@ use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 pub struct Proof {
     output_poly: MultilinearPoly<Fq>,
     claimed_sum: Fq,
-    proof_polynomials: Vec<Vec<Vec<Fq>>>,
+    proof_polynomials: Vec<Vec<UnivariatePoly<Fq>>>,
     claimed_evaluations: Vec<(Fq, Fq)>,
 }
 
@@ -53,7 +54,7 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
         let add_i = layers[idx].get_add_mul_i(Operation::Add);
         let mul_i = layers[idx].get_add_mul_i(Operation::Mul);
 
-        let w_i = if idx + 1 == circuit.layers.len() {
+        let w_i = if idx == circuit.layers.len() - 1 {
             inputs.to_vec()
         } else {
             circuit_evaluations[idx + 1].clone()
@@ -79,28 +80,30 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
 
         proof_polys.push(sum_check_proof.proof_polynomials);
 
-        //? add a check to stop it from doing next poly for input layer
-        let next_poly = MultilinearPoly::new(w_i);
+        //dont get random poly for last layer i.e input layer
+        if idx < circuit.layers.len() - 1 {
+            let next_poly = MultilinearPoly::new(w_i);
 
-        let random_challenges = sum_check_proof.random_challenges;
+            let random_challenges = sum_check_proof.random_challenges;
 
-        let (r_b, r_c) = random_challenges.split_at(random_challenges.len() / 2);
+            let (r_b, r_c) = random_challenges.split_at(random_challenges.len() / 2);
 
-        let o_1 = next_poly.evaluate(r_b.to_vec());
-        let o_2 = next_poly.evaluate(r_c.to_vec());
+            let o_1 = next_poly.evaluate(r_b.to_vec());
+            let o_2 = next_poly.evaluate(r_c.to_vec());
 
-        current_rb = r_b.to_vec();
-        current_rc = r_c.to_vec();
+            current_rb = r_b.to_vec();
+            current_rc = r_c.to_vec();
 
-        transcript.append(&fq_vec_to_bytes(&[o_1]));
-        current_alpha = transcript.get_random_challenge();
+            transcript.append(&fq_vec_to_bytes(&[o_1]));
+            current_alpha = transcript.get_random_challenge();
 
-        transcript.append(&fq_vec_to_bytes(&[o_2]));
-        current_beta = transcript.get_random_challenge();
+            transcript.append(&fq_vec_to_bytes(&[o_2]));
+            current_beta = transcript.get_random_challenge();
 
-        claimed_evaluations.push((o_1, o_2));
+            claimed_evaluations.push((o_1, o_2));
 
-        random_challenge = transcript.get_random_challenge();
+            random_challenge = transcript.get_random_challenge();
+        }
     }
 
     Proof {
@@ -111,18 +114,28 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
     }
 }
 
-pub fn verify(proof: Proof, circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
+pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
     let mut transcript = Transcript::<Fq>::new();
 
-    initiate_protocol(&mut transcript, &proof.output_poly);
+    let (_, init_random_challenge) = initiate_protocol(&mut transcript, &proof.output_poly);
 
     let mut current_claim = proof.claimed_sum;
 
+    circuit.layers.reverse();
+
+    //first round checks out properly
+    //2nd round fails on 2nd check
     for i in 0..circuit.layers.len() {
+        println!("round {i}");
         let sum_check_verify = gkr_verify(
             proof.proof_polynomials[i].clone(),
             current_claim,
-            transcript.clone(),
+            &mut transcript,
+        );
+
+        println!(
+            "final claimed sum at layer {i} is {:?}",
+            sum_check_verify.final_claimed_sum
         );
 
         if !sum_check_verify.verified {
@@ -130,13 +143,20 @@ pub fn verify(proof: Proof, circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
         }
 
         let layers = &circuit.layers;
-        let add_i = layers[i].get_add_mul_i(Operation::Add);
-        let mul_i = layers[i].get_add_mul_i(Operation::Mul);
 
-        let r_c = sum_check_verify.random_challenges;
+        let add_i = layers[i]
+            .get_add_mul_i(Operation::Add)
+            .partial_evaluate(0, &init_random_challenge);
 
-        let mut a_r = add_i.evaluate(r_c.clone());
-        let mut m_r = mul_i.evaluate(r_c);
+        let mul_i = layers[i]
+            .get_add_mul_i(Operation::Mul)
+            .partial_evaluate(0, &init_random_challenge);
+
+        let sum_check_randon_challenges = sum_check_verify.random_challenges;
+
+        let mut a_r = add_i.evaluate(sum_check_randon_challenges.clone());
+
+        let mut m_r = mul_i.evaluate(sum_check_randon_challenges);
 
         let (o_1, o_2) = proof.claimed_evaluations[i];
 
@@ -158,6 +178,14 @@ pub fn verify(proof: Proof, circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
         } else {
             return false;
         }
+
+        //now verify the input layer here
+        //we could either set some variables and verify outside the loop
+        //we need a claim of the next poly (created from the inputs)
+        //we want to show fbc of 2nd to last layer == fc(r2) of 2nd to last layer
+        //we need fc(r2) which is the last final claimed sum
+        //we need addi and muli of 2nd to last layer (which is merged)
+        //we need r1 and r2
 
         //get fbc poly to represent input layer
         //run sumcheck on the fbc poly then evaluate everything using the inputs and if correct return true
@@ -232,25 +260,17 @@ fn get_merged_fbc_poly(
     beta: Fq,
 ) -> SumPoly<Fq> {
     let add_i_rb = add_i.multi_partial_evaluate(r_b).scale(alpha);
-
     let add_i_rc = add_i.multi_partial_evaluate(r_c).scale(beta);
-
     let mul_i_rb = mul_i.multi_partial_evaluate(r_b).scale(alpha);
-
     let mul_i_rc = mul_i.multi_partial_evaluate(r_c).scale(beta);
-
     let summed_w_poly = add_mul_polynomials(w_b, w_c, Operation::Add);
     let multiplied_w_poly = add_mul_polynomials(w_b, w_c, Operation::Mul);
-
     let summed_add_i = add_i_rb.clone() + add_i_rc.clone();
-
     let summed_mul_i = mul_i_rb + mul_i_rc;
-
     let add_product_poly = ProductPoly::new(vec![
         summed_add_i.evaluation,
         summed_w_poly.evaluation.clone(),
     ]);
-
     let mul_product_poly = ProductPoly::new(vec![
         summed_mul_i.evaluation,
         multiplied_w_poly.evaluation.clone(),
@@ -268,6 +288,7 @@ mod test {
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::MultilinearPoly,
     };
+    use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     #[test]
     fn it_add_polys_correctly() {
@@ -423,18 +444,17 @@ mod test {
 
         let circuit = Circuit::new(circuit_structure);
 
+        let dummy_proof_poly_1 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
+        let dummy_proof_poly_2 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
+        let dummy_proof_poly_3 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
+        let dummy_proof_poly_4 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
+
         let invalid_proof = Proof {
             output_poly: MultilinearPoly::new(vec![Fq::from(10)]),
             claimed_sum: Fq::from(5),
             proof_polynomials: vec![
-                vec![
-                    vec![Fq::from(10), Fq::from(5)],
-                    vec![Fq::from(2), Fq::from(3)],
-                ],
-                vec![
-                    vec![Fq::from(10), Fq::from(5)],
-                    vec![Fq::from(2), Fq::from(3)],
-                ],
+                vec![dummy_proof_poly_1, dummy_proof_poly_2],
+                vec![dummy_proof_poly_3, dummy_proof_poly_4],
             ],
             claimed_evaluations: vec![(Fq::from(10), Fq::from(5)), (Fq::from(1), Fq::from(2))],
         };

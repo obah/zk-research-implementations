@@ -11,7 +11,7 @@ pub struct Proof {
     pub claimed_sum: Fq,
 }
 pub struct GkrProof {
-    pub proof_polynomials: Vec<Vec<Fq>>,
+    pub proof_polynomials: Vec<UnivariatePoly<Fq>>,
     pub claimed_sum: Fq,
     pub random_challenges: Vec<Fq>,
 }
@@ -83,7 +83,7 @@ pub fn verify(polynomial: &MultilinearPoly<Fq>, proof: Proof) -> bool {
     expected_sum == poly_eval_sum
 }
 
-////! verified correct
+////! verified incorrect
 pub fn gkr_prove(
     claimed_sum: Fq,
     composed_polynomial: &SumPoly<Fq>,
@@ -95,9 +95,9 @@ pub fn gkr_prove(
     let mut random_challenges = Vec::new();
 
     for _ in 0..num_rounds {
-        let proof_poly = get_round_partial_polynomial_proof_gkr(&current_poly); //this is f(b)
+        let proof_poly = get_round_partial_polynomial_proof_gkr(&current_poly); //this is f(b) then f(c)
 
-        transcript.append(&fq_vec_to_bytes(&proof_poly));
+        transcript.append(&fq_vec_to_bytes(&proof_poly.coefficient));
 
         proof_polynomials.push(proof_poly);
 
@@ -115,19 +115,22 @@ pub fn gkr_prove(
     }
 }
 
-////! verified correct
 pub fn gkr_verify(
-    round_polys: Vec<Vec<Fq>>,
+    round_polys: Vec<UnivariatePoly<Fq>>,
     mut claimed_sum: Fq,
-    mut transcript: Transcript<Fq>,
+    transcript: &mut Transcript<Fq>,
 ) -> GkrVerify {
     let mut random_challenges = Vec::new();
 
-    for poly in round_polys {
-        let round_poly = MultilinearPoly::new(poly.to_vec());
+    for (i, round_poly) in round_polys.iter().enumerate() {
+        println!("round polys verifying are sub round {i}");
+        let f_b_0 = round_poly.evaluate(Fq::from(0));
+        let f_b_1 = round_poly.evaluate(Fq::from(1));
 
-        let f_b_0 = round_poly.evaluate(vec![Fq::from(0)]);
-        let f_b_1 = round_poly.evaluate(vec![Fq::from(1)]);
+        let f_b_sum = f_b_0 + f_b_1;
+
+        println!("fb0+fb1 is {:?}", f_b_sum);
+        println!("current claimed sum is {:?}", claimed_sum);
 
         if f_b_0 + f_b_1 != claimed_sum {
             return GkrVerify {
@@ -137,13 +140,13 @@ pub fn gkr_verify(
             };
         }
 
-        transcript.append(&fq_vec_to_bytes(&poly));
+        transcript.append(&fq_vec_to_bytes(&round_poly.coefficient));
 
         let r_c = transcript.get_random_challenge();
 
         random_challenges.push(r_c);
 
-        claimed_sum = round_poly.evaluate(vec![r_c]); //next expected sum
+        claimed_sum = round_poly.evaluate(r_c); //next expected sum
     }
 
     GkrVerify {
@@ -153,14 +156,13 @@ pub fn gkr_verify(
     }
 }
 
-fn get_round_partial_polynomial_proof_gkr(composed_poly: &SumPoly<Fq>) -> Vec<Fq> {
+fn get_round_partial_polynomial_proof_gkr(composed_poly: &SumPoly<Fq>) -> UnivariatePoly<Fq> {
     let degree = composed_poly.get_degree();
     let mut poly_proof = Vec::with_capacity(degree + 1);
 
-    for i in 0..degree {
+    for i in 0..=degree {
         let value = Fq::from(i as u64);
         let partial_poly = composed_poly.partial_evaluate(&value);
-
         let eval = partial_poly.reduce().iter().sum();
         poly_proof.push(eval);
     }
@@ -171,7 +173,7 @@ fn get_round_partial_polynomial_proof_gkr(composed_poly: &SumPoly<Fq>) -> Vec<Fq
         .map(|(i, y)| (Fq::from(i as u64), *y))
         .collect();
 
-    UnivariatePoly::interpolate(points).coefficient
+    UnivariatePoly::interpolate(points)
 }
 
 fn get_round_partial_polynomial_proof(polynomial: &[Fq]) -> Vec<Fq> {
@@ -186,9 +188,15 @@ fn get_round_partial_polynomial_proof(polynomial: &[Fq]) -> Vec<Fq> {
 #[cfg(test)]
 mod test {
     use ark_bn254::Fq;
-    use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
+    use multilinear_polynomial::{
+        composed_polynomial::{ProductPoly, SumPoly},
+        multilinear_polynomial_evaluation::MultilinearPoly,
+    };
+    use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     use crate::sum_check_protocol::{prove, verify, Proof};
+
+    use super::get_round_partial_polynomial_proof_gkr;
 
     #[test]
     fn test_valid_proving_and_verification() {
@@ -226,5 +234,30 @@ mod test {
         let is_verified = verify(&initial_polynomial, false_proof);
 
         assert_eq!(is_verified, false);
+    }
+
+    #[test]
+    fn test_get_gkr_round_poly() {
+        let eval_1 = vec![Fq::from(0), Fq::from(3), Fq::from(2), Fq::from(5)];
+        let eval_2 = vec![Fq::from(0), Fq::from(6), Fq::from(4), Fq::from(10)];
+        let eval_3 = vec![Fq::from(0), Fq::from(1), Fq::from(1), Fq::from(2)];
+        let eval_4 = vec![Fq::from(0), Fq::from(2), Fq::from(2), Fq::from(4)];
+
+        let product_poly_1 = ProductPoly::new(vec![eval_1, eval_2]);
+        let product_poly_2 = ProductPoly::new(vec![eval_3, eval_4]);
+
+        let sum_poly = SumPoly::new(vec![product_poly_1, product_poly_2]);
+
+        let points = vec![
+            (Fq::from(0), Fq::from(20)),
+            (Fq::from(1), Fq::from(68)),
+            (Fq::from(2), Fq::from(156)),
+        ];
+
+        let expected_round_poly = UnivariatePoly::interpolate(points);
+
+        let round_poly = get_round_partial_polynomial_proof_gkr(&sum_poly);
+
+        assert_eq!(round_poly.coefficient, expected_round_poly.coefficient);
     }
 }

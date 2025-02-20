@@ -9,3 +9,4 @@ ark-ff = "0.5.0"
 multilinear_polynomial ={ path = "../multilinear_polynomial"}
 fiat_shamir={path = "../fiat_shamir"}
 sum_check ={path = "../sum_check"}
+univariate_polynomial = {path = "../univariate_polynomial"}
