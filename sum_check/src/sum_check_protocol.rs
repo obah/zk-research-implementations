@@ -122,15 +122,9 @@ pub fn gkr_verify(
 ) -> GkrVerify {
     let mut random_challenges = Vec::new();
 
-    for (i, round_poly) in round_polys.iter().enumerate() {
-        println!("round polys verifying are sub round {i}");
+    for round_poly in round_polys {
         let f_b_0 = round_poly.evaluate(Fq::from(0));
         let f_b_1 = round_poly.evaluate(Fq::from(1));
-
-        let f_b_sum = f_b_0 + f_b_1;
-
-        println!("fb0+fb1 is {:?}", f_b_sum);
-        println!("current claimed sum is {:?}", claimed_sum);
 
         if f_b_0 + f_b_1 != claimed_sum {
             return GkrVerify {
