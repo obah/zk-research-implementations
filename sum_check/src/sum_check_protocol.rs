@@ -83,7 +83,6 @@ pub fn verify(polynomial: &MultilinearPoly<Fq>, proof: Proof) -> bool {
     expected_sum == poly_eval_sum
 }
 
-////! verified incorrect
 pub fn gkr_prove(
     claimed_sum: Fq,
     composed_polynomial: &SumPoly<Fq>,

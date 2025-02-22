@@ -121,11 +121,6 @@ pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
             &mut transcript,
         );
 
-        println!(
-            "final claimed sum at layer {i} is {:?}",
-            sum_check_verify.final_claimed_sum
-        );
-
         if !sum_check_verify.verified {
             return false;
         }
@@ -145,6 +140,7 @@ pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
         );
 
         if claim == sum_check_verify.final_claimed_sum {
+            println!("check on layer {i} passed!");
             current_claim = next_claim;
             current_random_challenge = transcript.get_random_challenge();
             sumcheck_random_challenges.push(sum_check_verify.random_challenges);
@@ -154,6 +150,8 @@ pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
             return false;
         }
     }
+
+    //todo run a simple test to check all the expected claimed sums
 
     let r_count = sumcheck_random_challenges.len();
 
@@ -170,9 +168,15 @@ pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
         current_beta,
     );
 
-    let final_claim = input_fbc_poly.evaluate(sumcheck_random_challenges.last().unwrap().to_vec());
+    let input_layer_claim =
+        input_fbc_poly.evaluate(sumcheck_random_challenges.last().unwrap().to_vec());
 
-    final_claim == current_claim
+    println!(
+        "final claim is {:?} and input claim is {:?}",
+        current_claim, input_layer_claim
+    );
+
+    input_layer_claim == current_claim
 }
 
 fn initiate_protocol(
@@ -296,7 +300,7 @@ fn get_verifier_claim(
         (alpha * a_r * (o_1 + o_2)) + (beta * m_r * (o_1 * o_2))
     };
 
-    //? dont yet increase till you confirm its verified
+    //? maybe dont yet increase till you confirm its verified?
     let next_claim = (alpha * o_1) + (beta * o_2);
 
     (current_claim, next_claim, alpha, beta)

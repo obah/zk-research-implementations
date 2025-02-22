@@ -54,8 +54,7 @@ fn share_points(
 
     let mut rng = StdRng::from_entropy();
 
-    let mut shares: Vec<(Fq, Fq)> = vec![];
-    // let mut shares: Vec<(Fq, Fq)> = vec![(Fq::from(0), Fq::from(0)); num_of_shares];
+    let mut shares: Vec<(Fq, Fq)> = Vec::new();
 
     for _ in 0..num_of_shares {
         let random_x_point = rng.gen();
