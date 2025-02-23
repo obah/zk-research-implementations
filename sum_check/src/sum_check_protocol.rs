@@ -181,6 +181,7 @@ fn get_round_partial_polynomial_proof(polynomial: &[Fq]) -> Vec<Fq> {
 #[cfg(test)]
 mod test {
     use ark_bn254::Fq;
+    use fiat_shamir::fiat_shamir_transcript::Transcript;
     use multilinear_polynomial::{
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::MultilinearPoly,
@@ -189,7 +190,7 @@ mod test {
 
     use crate::sum_check_protocol::{prove, verify, Proof};
 
-    use super::get_round_partial_polynomial_proof_gkr;
+    use super::{get_round_partial_polynomial_proof_gkr, gkr_prove, gkr_verify};
 
     #[test]
     fn test_valid_proving_and_verification() {
@@ -252,5 +253,29 @@ mod test {
         let round_poly = get_round_partial_polynomial_proof_gkr(&sum_poly);
 
         assert_eq!(round_poly.coefficient, expected_round_poly.coefficient);
+    }
+    #[test]
+    fn test_gkr_prover_and_verifier() {
+        let poly1a = MultilinearPoly::new(vec![Fq::from(0), Fq::from(0), Fq::from(0), Fq::from(2)]);
+        let poly2a = MultilinearPoly::new(vec![Fq::from(0), Fq::from(0), Fq::from(0), Fq::from(3)]);
+        let product_poly1 = ProductPoly::new(vec![poly1a.evaluation, poly2a.evaluation]);
+
+        let poly1b = MultilinearPoly::new(vec![Fq::from(0), Fq::from(0), Fq::from(0), Fq::from(2)]);
+        let poly2b = MultilinearPoly::new(vec![Fq::from(0), Fq::from(0), Fq::from(0), Fq::from(3)]);
+        let product_poly2 = ProductPoly::new(vec![poly1b.evaluation, poly2b.evaluation]);
+
+        let fbc_poly = SumPoly::new(vec![product_poly1, product_poly2]);
+
+        let mut transcript1 = Transcript::new();
+        let mut transcript2 = Transcript::new();
+
+        let result = gkr_prove(Fq::from(12), &fbc_poly, &mut transcript1);
+        let verified = gkr_verify(
+            result.proof_polynomials,
+            result.claimed_sum,
+            &mut transcript2,
+        );
+
+        assert_eq!(verified.verified, true);
     }
 }

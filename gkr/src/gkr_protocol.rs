@@ -29,10 +29,9 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
 
     let output_poly = MultilinearPoly::new(w_0);
 
-    let (mut claimed_sum, mut random_challenge) = initiate_protocol(&mut transcript, &output_poly);
+    let (mut claimed_sum, random_challenge) = initiate_protocol(&mut transcript, &output_poly);
 
-    let num_rounds = 2;
-    let mut proof_polys = Vec::with_capacity(num_rounds);
+    let mut proof_polys = Vec::new();
     let mut claimed_evaluations: Vec<(Fq, Fq)> = Vec::new();
 
     let mut current_alpha = Fq::from(0);
@@ -46,6 +45,7 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
         let mut layers = circuit.layers.clone();
         layers.reverse();
 
+        //doesnt need to do inputs so limit the rounds, no need for next poly of inputs
         let w_i = if idx == circuit.layers.len() - 1 {
             inputs.to_vec()
         } else {
@@ -91,8 +91,6 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
         claimed_sum = (current_alpha * o_1) + (current_beta * o_2);
 
         claimed_evaluations.push((o_1, o_2));
-
-        random_challenge = transcript.get_random_challenge();
     }
 
     Proof {
@@ -105,12 +103,15 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
 pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
     let mut transcript = Transcript::<Fq>::new();
 
-    let (mut current_claim, mut current_random_challenge) =
+    let (mut current_claim, current_random_challenge) =
         initiate_protocol(&mut transcript, &proof.output_poly);
 
-    let mut sumcheck_random_challenges = Vec::new();
-    let mut current_alpha = Fq::from(0);
-    let mut current_beta = Fq::from(0);
+    let mut sumcheck_random_challenges: Vec<Vec<Fq>> = Vec::new();
+    let mut alpha = Fq::from(0);
+    let mut beta = Fq::from(0);
+
+    let mut alphas = Vec::new();
+    let mut betas = Vec::new();
 
     circuit.layers.reverse();
 
@@ -124,59 +125,59 @@ pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
         if !sum_check_verify.verified {
             return false;
         }
+        println!("check {i}");
 
         let layer = &circuit.layers[i];
 
-        let (o_1, o_2) = proof.claimed_evaluations[i];
+        let (o_1, o_2) = if i == circuit.layers.len() - 1 {
+            evaluate_input_poly(inputs, &sum_check_verify.random_challenges)
+        } else {
+            proof.claimed_evaluations[i]
+        };
 
-        let (claim, next_claim, alpha, beta) = get_verifier_claim(
-            layer,
-            current_random_challenge,
-            &sum_check_verify.random_challenges,
-            o_1,
-            o_2,
-            &mut transcript,
-            i,
-        );
+        println!("o1 is {:?}", o_1);
 
-        if claim == sum_check_verify.final_claimed_sum {
+        let expected_claim = if i == 0 {
+            get_verifier_claim(
+                layer,
+                current_random_challenge,
+                &sum_check_verify.random_challenges,
+                o_1,
+                o_2,
+            )
+        } else {
+            get_merged_verifier_claim(
+                layer,
+                &sum_check_verify.random_challenges,
+                sumcheck_random_challenges.last().unwrap(),
+                o_1,
+                o_2,
+                alpha,
+                beta,
+            )
+        };
+
+        if expected_claim == sum_check_verify.final_claimed_sum {
             println!("check on layer {i} passed!");
-            current_claim = next_claim;
-            current_random_challenge = transcript.get_random_challenge();
+
             sumcheck_random_challenges.push(sum_check_verify.random_challenges);
-            current_alpha = alpha;
-            current_beta = beta;
+
+            transcript.append(&fq_vec_to_bytes(&[o_1]));
+            alpha = transcript.get_random_challenge();
+
+            transcript.append(&fq_vec_to_bytes(&[o_2]));
+            beta = transcript.get_random_challenge();
+
+            current_claim = (alpha * o_1) + (beta * o_2);
+
+            alphas.push(alpha);
+            betas.push(beta);
         } else {
             return false;
         }
     }
 
-    //todo run a simple test to check all the expected claimed sums
-
-    let r_count = sumcheck_random_challenges.len();
-
-    let (r_1, r_2) = sumcheck_random_challenges[r_count - 2]
-        .split_at(sumcheck_random_challenges[r_count - 2].len() / 2);
-
-    let input_fbc_poly = get_merged_fbc_poly(
-        circuit.layers.last().unwrap().clone(),
-        inputs,
-        inputs,
-        r_1,
-        r_2,
-        current_alpha,
-        current_beta,
-    );
-
-    let input_layer_claim =
-        input_fbc_poly.evaluate(sumcheck_random_challenges.last().unwrap().to_vec());
-
-    println!(
-        "final claim is {:?} and input claim is {:?}",
-        current_claim, input_layer_claim
-    );
-
-    input_layer_claim == current_claim
+    true
 }
 
 fn initiate_protocol(
@@ -207,7 +208,7 @@ fn add_mul_polynomials(poly_a: &[Fq], poly_b: &[Fq], op: Operation) -> Multiline
     MultilinearPoly::new(new_eval)
 }
 
-fn get_fbc_poly(random_challenge: Fq, layer: Layer<Fq>, w_b: &[Fq], w_c: &[Fq]) -> SumPoly<Fq> {
+pub fn get_fbc_poly(random_challenge: Fq, layer: Layer<Fq>, w_b: &[Fq], w_c: &[Fq]) -> SumPoly<Fq> {
     let add_i = layer
         .get_add_mul_i(Operation::Add)
         .partial_evaluate(0, &random_challenge);
@@ -269,12 +270,10 @@ fn get_verifier_claim(
     sumcheck_random_challenges: &[Fq],
     o_1: Fq,
     o_2: Fq,
-    transcript: &mut Transcript<Fq>,
-    layer_id: usize,
-) -> (Fq, Fq, Fq, Fq) {
+) -> Fq {
     let (r_b, r_c) = sumcheck_random_challenges.split_at(sumcheck_random_challenges.len() / 2);
 
-    let mut all_random_challenges = Vec::with_capacity(1 + r_b.len() + r_c.len());
+    let mut all_random_challenges = Vec::new();
 
     all_random_challenges.push(init_random_challenge);
     all_random_challenges.extend_from_slice(r_b);
@@ -288,28 +287,65 @@ fn get_verifier_claim(
         .get_add_mul_i(Operation::Mul)
         .evaluate(all_random_challenges);
 
-    transcript.append(&fq_vec_to_bytes(&[o_1]));
-    let alpha = transcript.get_random_challenge();
+    let expected_claim = (a_r * (o_1 + o_2)) + (m_r * (o_1 * o_2));
 
-    transcript.append(&fq_vec_to_bytes(&[o_2]));
-    let beta = transcript.get_random_challenge();
+    expected_claim
+}
 
-    let current_claim = if layer_id == 0 {
-        a_r * (o_1 + o_2) + m_r * (o_1 * o_2)
-    } else {
-        (alpha * a_r * (o_1 + o_2)) + (beta * m_r * (o_1 * o_2))
-    };
+fn get_merged_verifier_claim(
+    layer: &Layer<Fq>,
+    current_random_challenge: &[Fq],
+    previous_random_challenge: &[Fq],
+    o_1: Fq,
+    o_2: Fq,
+    alpha: Fq,
+    beta: Fq,
+) -> Fq {
+    let (prev_r_b, prev_r_c) =
+        previous_random_challenge.split_at(previous_random_challenge.len() / 2);
 
-    //? maybe dont yet increase till you confirm its verified?
-    let next_claim = (alpha * o_1) + (beta * o_2);
+    let add_i = layer
+        .get_add_mul_i(Operation::Add)
+        .multi_partial_evaluate(prev_r_b)
+        .scale(alpha)
+        + layer
+            .get_add_mul_i(Operation::Add)
+            .multi_partial_evaluate(prev_r_c)
+            .scale(beta);
 
-    (current_claim, next_claim, alpha, beta)
+    let mul_i = layer
+        .get_add_mul_i(Operation::Mul)
+        .multi_partial_evaluate(prev_r_b)
+        .scale(alpha)
+        + layer
+            .get_add_mul_i(Operation::Mul)
+            .multi_partial_evaluate(prev_r_c)
+            .scale(beta);
+
+    let a_r = add_i.evaluate(current_random_challenge.to_vec());
+
+    let m_r = mul_i.evaluate(current_random_challenge.to_vec());
+
+    let expected_claim = (a_r * (o_1 + o_2)) + (m_r * (o_1 * o_2));
+
+    expected_claim
+}
+
+fn evaluate_input_poly(inputs: &[Fq], sumcheck_random_challenges: &[Fq]) -> (Fq, Fq) {
+    let input_poly = MultilinearPoly::new(inputs.to_vec());
+
+    let (r_b, r_c) = sumcheck_random_challenges.split_at(sumcheck_random_challenges.len() / 2);
+
+    let o_1 = input_poly.evaluate(r_b.to_vec());
+    let o_2 = input_poly.evaluate(r_c.to_vec());
+
+    (o_1, o_2)
 }
 
 #[cfg(test)]
 mod test {
-    use super::{add_mul_polynomials, get_fbc_poly, prove, verify, Proof};
-    use crate::gkr_circuit::{Circuit, Operation};
+    use super::{add_mul_polynomials, get_fbc_poly, get_merged_fbc_poly, prove, verify, Proof};
+    use crate::gkr_circuit::{Circuit, Gate, Layer, Operation};
     use ark_bn254::Fq;
     use multilinear_polynomial::{
         composed_polynomial::{ProductPoly, SumPoly},
@@ -379,38 +415,53 @@ mod test {
 
     #[test]
     fn test_get_fbc_poly() {
-        // let r_c = Fq::from(5);
-        // let add_i = MultilinearPoly::new(vec![
-        //     Fq::from(0),
-        //     Fq::from(1),
-        //     Fq::from(0),
-        //     Fq::from(0),
-        //     Fq::from(0),
-        //     Fq::from(0),
-        //     Fq::from(0),
-        //     Fq::from(0),
-        // ]);
-        // let mul_i = MultilinearPoly::new(vec![Fq::from(0); 8]);
-        // let w_1_poly = &[Fq::from(2), Fq::from(12)];
+        let gate = Gate::new(Fq::from(2), Fq::from(14), Operation::Add);
 
-        // let fbc_poly = get_fbc_poly(r_c, add_i.clone(), mul_i.clone(), w_1_poly, w_1_poly);
+        let layer = Layer::new(vec![gate]);
 
-        // let one = ProductPoly::new(vec![
-        //     add_i.evaluation,
-        //     vec![Fq::from(4), Fq::from(14), Fq::from(14), Fq::from(24)],
-        // ]);
-        // let two = ProductPoly::new(vec![
-        //     mul_i.evaluation,
-        //     vec![Fq::from(4), Fq::from(24), Fq::from(24), Fq::from(144)],
-        // ]);
+        let r_c = Fq::from(5);
 
-        // let expected_result = SumPoly::new(vec![one, two]);
+        let w_1_poly = &[Fq::from(2), Fq::from(12)];
 
-        // assert_eq!(fbc_poly.polys, expected_result.polys);
+        let add_i_r =
+            MultilinearPoly::new(vec![Fq::from(0), Fq::from(-4), Fq::from(0), Fq::from(0)]);
+
+        let mul_i_r = MultilinearPoly::new(vec![Fq::from(0); 4]);
+
+        let fbc_poly = get_fbc_poly(r_c, layer, w_1_poly, w_1_poly);
+
+        let one = ProductPoly::new(vec![
+            add_i_r.evaluation,
+            vec![Fq::from(4), Fq::from(14), Fq::from(14), Fq::from(24)],
+        ]);
+
+        let two = ProductPoly::new(vec![
+            mul_i_r.evaluation,
+            vec![Fq::from(4), Fq::from(24), Fq::from(24), Fq::from(144)],
+        ]);
+
+        let expected_result = SumPoly::new(vec![one, two]);
+
+        assert_eq!(fbc_poly.polys, expected_result.polys);
     }
 
     #[test]
-    fn test_get_merged_fbc_poly() {}
+    fn test_get_merged_fbc_poly() {
+        let gate_1 = Gate::new(Fq::from(1), Fq::from(2), Operation::Mul);
+        let gate_2 = Gate::new(Fq::from(3), Fq::from(4), Operation::Mul);
+
+        let layer = Layer::new(vec![gate_1, gate_2]);
+
+        let w_poly = vec![Fq::from(1), Fq::from(2), Fq::from(3), Fq::from(4)];
+
+        let alpha = Fq::from(2);
+        let beta = Fq::from(1);
+
+        let r_b = &[Fq::from(2)];
+        let r_c = &[Fq::from(3)];
+
+        let merged_fbc_poly = get_merged_fbc_poly(layer, &w_poly, &w_poly, r_b, r_c, alpha, beta);
+    }
 
     #[test]
     fn test_valid_proving_and_verification() {

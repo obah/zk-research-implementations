@@ -25,7 +25,7 @@ pub struct Gate<F: PrimeField> {
 }
 
 impl<F: PrimeField> Gate<F> {
-    fn new(l_input: F, r_input: F, op: Operation) -> Self {
+    pub fn new(l_input: F, r_input: F, op: Operation) -> Self {
         let output = op.apply(l_input, r_input);
 
         Self {
@@ -43,7 +43,7 @@ pub struct Layer<F: PrimeField> {
 }
 
 impl<F: PrimeField> Layer<F> {
-    fn new(gates: Vec<Gate<F>>) -> Self {
+    pub fn new(gates: Vec<Gate<F>>) -> Self {
         Self { gates }
     }
 
