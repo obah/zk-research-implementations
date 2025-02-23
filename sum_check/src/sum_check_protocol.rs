@@ -89,9 +89,9 @@ pub fn gkr_prove(
     transcript: &mut Transcript<Fq>,
 ) -> GkrProof {
     let num_rounds = composed_polynomial.polys[0].evaluation[0].num_of_vars;
-    let mut proof_polynomials = Vec::with_capacity(num_rounds as usize);
+    let mut proof_polynomials = Vec::with_capacity(num_rounds);
+    let mut random_challenges = Vec::with_capacity(num_rounds);
     let mut current_poly = composed_polynomial.clone();
-    let mut random_challenges = Vec::new();
 
     for _ in 0..num_rounds {
         let proof_poly = get_round_partial_polynomial_proof_gkr(&current_poly); //this is f(b) then f(c)
@@ -151,19 +151,14 @@ pub fn gkr_verify(
 
 fn get_round_partial_polynomial_proof_gkr(composed_poly: &SumPoly<Fq>) -> UnivariatePoly<Fq> {
     let degree = composed_poly.get_degree();
-    let mut poly_proof = Vec::with_capacity(degree + 1);
+    let points = (0..=degree)
+        .map(|i| {
+            let x = Fq::from(i as u64);
+            let partial_poly = composed_poly.partial_evaluate(&x);
+            let y = partial_poly.reduce().iter().sum();
 
-    for i in 0..=degree {
-        let value = Fq::from(i as u64);
-        let partial_poly = composed_poly.partial_evaluate(&value);
-        let eval = partial_poly.reduce().iter().sum();
-        poly_proof.push(eval);
-    }
-
-    let points = poly_proof
-        .iter()
-        .enumerate()
-        .map(|(i, y)| (Fq::from(i as u64), *y))
+            (x, y)
+        })
         .collect();
 
     UnivariatePoly::interpolate(points)
