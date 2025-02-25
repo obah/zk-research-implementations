@@ -48,6 +48,10 @@ impl<F: PrimeField> MultilinearPoly<F> {
     }
 
     pub fn multi_partial_evaluate(&self, values: &[F]) -> Self {
+        if values.len() > self.num_of_vars {
+            panic!("Invalid number of values");
+        }
+
         let mut poly = self.clone();
 
         for value in values {
