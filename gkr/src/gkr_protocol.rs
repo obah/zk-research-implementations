@@ -9,10 +9,6 @@ use multilinear_polynomial::{
 };
 use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 
-//todo changes to gkr
-//todo for the initial m_0, try to get length of vars and do random challenge for each into 1
-//todo check if wpoly for inputs and wpolys is 2^n if not, pad it with 0 to next 2^n
-
 #[derive(Debug)]
 pub struct Proof<F: PrimeField> {
     output_poly: MultilinearPoly<F>,
@@ -54,7 +50,7 @@ pub fn prove<F: PrimeField>(circuit: &mut Circuit<F>, inputs: &[F]) -> Proof<F> 
         let fbc_poly = if idx == 0 {
             get_fbc_poly(random_challenge, layer, &w_i, &w_i)
         } else {
-            get_merged_fbc_poly(layer, &w_i, &w_i, &current_rb, &current_rc, alpha, beta)
+            get_folded_fbc_poly(layer, &w_i, &w_i, &current_rb, &current_rc, alpha, beta)
         };
 
         let sum_check_proof = gkr_prove(claimed_sum, &fbc_poly, &mut transcript);
@@ -129,7 +125,7 @@ pub fn verify<F: PrimeField>(proof: Proof<F>, mut circuit: Circuit<F>, inputs: &
                 o_2,
             )
         } else {
-            get_merged_verifier_claim(
+            get_folded_verifier_claim(
                 layer,
                 &current_random_challenge,
                 &prev_sumcheck_random_challenges,
@@ -207,7 +203,7 @@ pub fn get_fbc_poly<F: PrimeField>(
     SumPoly::new(vec![add_eval_product, mul_eval_product])
 }
 
-fn get_merged_fbc_poly<F: PrimeField>(
+fn get_folded_fbc_poly<F: PrimeField>(
     layer: Layer<F>,
     w_b: &[F],
     w_c: &[F],
@@ -254,10 +250,11 @@ fn get_verifier_claim<F: PrimeField>(
     let m_r = layer
         .get_add_mul_i(Operation::Mul)
         .evaluate(all_random_challenges);
+
     (a_r * (o_1 + o_2)) + (m_r * (o_1 * o_2))
 }
 
-fn get_merged_verifier_claim<F: PrimeField>(
+fn get_folded_verifier_claim<F: PrimeField>(
     layer: &Layer<F>,
     current_random_challenge: &[F],
     previous_random_challenge: &[F],
@@ -298,7 +295,7 @@ fn evaluate_input_poly<F: PrimeField>(inputs: &[F], sumcheck_random_challenges: 
 #[cfg(test)]
 mod test {
     use super::{
-        get_fbc_poly, get_merged_fbc_poly, prove, tensor_add_mul_polynomials, verify, Proof,
+        get_fbc_poly, get_folded_fbc_poly, prove, tensor_add_mul_polynomials, verify, Proof,
     };
     use crate::gkr_circuit::{Circuit, Gate, Layer, Operation};
     use ark_bn254::Fq;
@@ -399,23 +396,24 @@ mod test {
         assert_eq!(fbc_poly.polys, expected_result.polys);
     }
 
-    #[test]
-    fn test_get_merged_fbc_poly() {
-        // let gate_1 = Gate::new(Fq::from(1), Fq::from(2), Operation::Mul);
-        // let gate_2 = Gate::new(Fq::from(3), Fq::from(4), Operation::Mul);
+    // #[test]
+    // fn test_get_folded_fbc_poly() {
+    //     let gate_1 = Gate::new(Fq::from(1), Fq::from(2), Operation::Mul);
+    //     let gate_2 = Gate::new(Fq::from(3), Fq::from(4), Operation::Mul);
 
-        // let layer = Layer::new(vec![gate_1, gate_2]);
+    //     let layer = Layer::new(vec![gate_1, gate_2]);
 
-        // let w_poly = vec![Fq::from(1), Fq::from(2), Fq::from(3), Fq::from(4)];
+    //     let w_poly = vec![Fq::from(1), Fq::from(2), Fq::from(3), Fq::from(4)];
 
-        // let alpha = Fq::from(2);
-        // let beta = Fq::from(1);
+    //     let alpha = Fq::from(2);
+    //     let beta = Fq::from(1);
 
-        // let r_b = &[Fq::from(2)];
-        // let r_c = &[Fq::from(3)];
+    //     let r_b = &[Fq::from(2)];
+    //     let r_c = &[Fq::from(3)];
 
-        // let merged_fbc_poly = get_merged_fbc_poly(layer, &w_poly, &w_poly, r_b, r_c, alpha, beta);
-    }
+    //     let folded_fbc_poly = get_folded_fbc_poly(layer, &w_poly, &w_poly, r_b, r_c, alpha, beta);
+
+    // }
 
     #[test]
     fn test_valid_proving_and_verification() {
