@@ -1,5 +1,5 @@
 use ark_ff::PrimeField;
-use std::ops::{Add, Mul};
+use std::ops::{Add, Mul, Sub};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MultilinearPoly<F: PrimeField> {
@@ -106,6 +106,21 @@ impl<F: PrimeField> Mul for MultilinearPoly<F> {
             .iter()
             .zip(other.evaluation.iter())
             .map(|(a, b)| *a * *b)
+            .collect();
+
+        MultilinearPoly::new(result)
+    }
+}
+
+impl<F: PrimeField> Sub for MultilinearPoly<F> {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        let result = self
+            .evaluation
+            .iter()
+            .zip(other.evaluation.iter())
+            .map(|(a, b)| *a - *b)
             .collect();
 
         MultilinearPoly::new(result)
