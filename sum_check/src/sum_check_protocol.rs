@@ -96,7 +96,6 @@ pub fn gkr_prove<F: PrimeField>(
     for _ in 0..num_rounds {
         let proof_poly = get_round_partial_polynomial_proof_gkr(&current_poly); //this is f(b) then f(c)
 
-        // transcript.append(&fq_vec_to_bytes(&proof_poly.coefficient));
         transcript.append(&fq_vec_to_bytes(&proof_poly));
 
         proof_polynomials.push(proof_poly);
@@ -172,17 +171,6 @@ fn get_round_partial_polynomial_proof_gkr<F: PrimeField>(composed_poly: &SumPoly
             partial_poly.reduce().iter().sum()
         })
         .collect()
-    // let points = (0..=degree)
-    //     .map(|i| {
-    //         let x = F::from(i as u64);
-    //         let partial_poly = composed_poly.partial_evaluate(&x);
-    //         let y = partial_poly.reduce().iter().sum();
-
-    //         (x, y)
-    //     })
-    //     .collect();
-
-    // UnivariatePoly::interpolate(points)
 }
 
 fn get_round_partial_polynomial_proof<F: PrimeField>(polynomial: &[F]) -> Vec<F> {
@@ -202,7 +190,6 @@ mod test {
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::MultilinearPoly,
     };
-    use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     use crate::sum_check_protocol::{prove, verify, Proof};
 
@@ -259,8 +246,6 @@ mod test {
         let sum_poly = SumPoly::new(vec![product_poly_1, product_poly_2]);
 
         let expected_round_poly = vec![Fq::from(20), Fq::from(68), Fq::from(156)];
-
-        // let expected_round_poly = UnivariatePoly::interpolate(points);
 
         let round_poly = get_round_partial_polynomial_proof_gkr(&sum_poly);
 
