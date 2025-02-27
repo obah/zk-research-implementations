@@ -1,5 +1,4 @@
 use crate::gkr_circuit::{Circuit, Layer, Operation};
-use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
 use ark_ff::PrimeField;
 
@@ -13,12 +12,11 @@ use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 //todo changes to gkr
 //todo for the initial m_0, try to get length of vars and do random challenge for each into 1
 //todo check if wpoly for inputs and wpolys is 2^n if not, pad it with 0 to next 2^n
-//todo change Fq to F: Primefield
 
 #[derive(Debug)]
 pub struct Proof<F: PrimeField> {
     output_poly: MultilinearPoly<F>,
-    proof_polynomials: Vec<Vec<UnivariatePoly<F>>>,
+    proof_polynomials: Vec<Vec<Vec<F>>>,
     claimed_evaluations: Vec<(F, F)>,
 }
 
@@ -245,11 +243,10 @@ fn get_verifier_claim<F: PrimeField>(
     o_1: F,
     o_2: F,
 ) -> F {
-    let (r_b, r_c) = sumcheck_random_challenges.split_at(sumcheck_random_challenges.len() / 2);
-    let mut all_random_challenges = Vec::with_capacity(1 + r_b.len() + r_c.len());
+    let mut all_random_challenges = Vec::with_capacity(1 + sumcheck_random_challenges.len());
+
     all_random_challenges.push(init_random_challenge);
-    all_random_challenges.extend_from_slice(r_b);
-    all_random_challenges.extend_from_slice(r_c);
+    all_random_challenges.extend_from_slice(sumcheck_random_challenges);
 
     let a_r = layer
         .get_add_mul_i(Operation::Add)
@@ -309,7 +306,6 @@ mod test {
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::MultilinearPoly,
     };
-    use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     #[test]
     fn it_add_polys_correctly() {
@@ -463,12 +459,12 @@ mod test {
 
         let circuit = Circuit::new(circuit_structure);
 
-        let dummy_proof_poly_1 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
-        let dummy_proof_poly_2 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
-        let dummy_proof_poly_3 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
-        let dummy_proof_poly_4 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
-        let dummy_proof_poly_5 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
-        let dummy_proof_poly_6 = UnivariatePoly::new(vec![Fq::from(10), Fq::from(5)]);
+        let dummy_proof_poly_1 = vec![Fq::from(10), Fq::from(5)];
+        let dummy_proof_poly_2 = vec![Fq::from(10), Fq::from(5)];
+        let dummy_proof_poly_3 = vec![Fq::from(10), Fq::from(5)];
+        let dummy_proof_poly_4 = vec![Fq::from(10), Fq::from(5)];
+        let dummy_proof_poly_5 = vec![Fq::from(10), Fq::from(5)];
+        let dummy_proof_poly_6 = vec![Fq::from(10), Fq::from(5)];
 
         let invalid_proof = Proof {
             output_poly: MultilinearPoly::new(vec![Fq::from(10), Fq::from(0)]),

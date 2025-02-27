@@ -11,7 +11,7 @@ pub struct Proof<F: PrimeField> {
     pub claimed_sum: F,
 }
 pub struct GkrProof<F: PrimeField> {
-    pub proof_polynomials: Vec<UnivariatePoly<F>>,
+    pub proof_polynomials: Vec<Vec<F>>,
     pub claimed_sum: F,
     pub random_challenges: Vec<F>,
 }
@@ -96,7 +96,8 @@ pub fn gkr_prove<F: PrimeField>(
     for _ in 0..num_rounds {
         let proof_poly = get_round_partial_polynomial_proof_gkr(&current_poly); //this is f(b) then f(c)
 
-        transcript.append(&fq_vec_to_bytes(&proof_poly.coefficient));
+        // transcript.append(&fq_vec_to_bytes(&proof_poly.coefficient));
+        transcript.append(&fq_vec_to_bytes(&proof_poly));
 
         proof_polynomials.push(proof_poly);
 
@@ -115,15 +116,15 @@ pub fn gkr_prove<F: PrimeField>(
 }
 
 pub fn gkr_verify<F: PrimeField>(
-    round_polys: Vec<UnivariatePoly<F>>,
+    round_polys: Vec<Vec<F>>,
     mut claimed_sum: F,
     transcript: &mut Transcript<F>,
 ) -> GkrVerify<F> {
     let mut random_challenges = Vec::new();
 
     for round_poly in round_polys {
-        let f_b_0 = round_poly.evaluate(F::zero());
-        let f_b_1 = round_poly.evaluate(F::one());
+        let f_b_0 = round_poly[0];
+        let f_b_1 = round_poly[1];
 
         if f_b_0 + f_b_1 != claimed_sum {
             return GkrVerify {
@@ -133,13 +134,25 @@ pub fn gkr_verify<F: PrimeField>(
             };
         }
 
-        transcript.append(&fq_vec_to_bytes(&round_poly.coefficient));
+        transcript.append(&fq_vec_to_bytes(&round_poly));
 
         let r_c = transcript.get_random_challenge();
 
         random_challenges.push(r_c);
 
-        claimed_sum = round_poly.evaluate(r_c); //next expected sum
+        let round_uni_points = round_poly
+            .iter()
+            .enumerate()
+            .map(|(i, y)| {
+                let x = F::from(i as u64);
+
+                (x, *y)
+            })
+            .collect();
+
+        let round_uni_poly = UnivariatePoly::interpolate(round_uni_points);
+
+        claimed_sum = round_uni_poly.evaluate(r_c); //next expected sum
     }
 
     GkrVerify {
@@ -149,21 +162,27 @@ pub fn gkr_verify<F: PrimeField>(
     }
 }
 
-fn get_round_partial_polynomial_proof_gkr<F: PrimeField>(
-    composed_poly: &SumPoly<F>,
-) -> UnivariatePoly<F> {
+fn get_round_partial_polynomial_proof_gkr<F: PrimeField>(composed_poly: &SumPoly<F>) -> Vec<F> {
     let degree = composed_poly.get_degree();
-    let points = (0..=degree)
+
+    (0..=degree)
         .map(|i| {
-            let x = F::from(i as u64);
-            let partial_poly = composed_poly.partial_evaluate(&x);
-            let y = partial_poly.reduce().iter().sum();
+            let partial_poly = composed_poly.partial_evaluate(&F::from(i as u64));
 
-            (x, y)
+            partial_poly.reduce().iter().sum()
         })
-        .collect();
+        .collect()
+    // let points = (0..=degree)
+    //     .map(|i| {
+    //         let x = F::from(i as u64);
+    //         let partial_poly = composed_poly.partial_evaluate(&x);
+    //         let y = partial_poly.reduce().iter().sum();
 
-    UnivariatePoly::interpolate(points)
+    //         (x, y)
+    //     })
+    //     .collect();
+
+    // UnivariatePoly::interpolate(points)
 }
 
 fn get_round_partial_polynomial_proof<F: PrimeField>(polynomial: &[F]) -> Vec<F> {
@@ -239,17 +258,13 @@ mod test {
 
         let sum_poly = SumPoly::new(vec![product_poly_1, product_poly_2]);
 
-        let points = vec![
-            (Fq::from(0), Fq::from(20)),
-            (Fq::from(1), Fq::from(68)),
-            (Fq::from(2), Fq::from(156)),
-        ];
+        let expected_round_poly = vec![Fq::from(20), Fq::from(68), Fq::from(156)];
 
-        let expected_round_poly = UnivariatePoly::interpolate(points);
+        // let expected_round_poly = UnivariatePoly::interpolate(points);
 
         let round_poly = get_round_partial_polynomial_proof_gkr(&sum_poly);
 
-        assert_eq!(round_poly.coefficient, expected_round_poly.coefficient);
+        assert_eq!(round_poly, expected_round_poly);
     }
     #[test]
     fn test_gkr_prover_and_verifier() {
