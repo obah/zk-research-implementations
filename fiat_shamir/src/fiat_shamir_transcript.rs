@@ -1,4 +1,3 @@
-use ark_bn254::Fq;
 use ark_ff::{BigInteger, PrimeField};
 use sha3::{Digest, Keccak256};
 use std::marker::PhantomData;
@@ -30,7 +29,7 @@ impl<F: PrimeField> Transcript<F> {
     }
 }
 
-pub fn fq_vec_to_bytes(values: &[Fq]) -> Vec<u8> {
+pub fn fq_vec_to_bytes<F: PrimeField>(values: &[F]) -> Vec<u8> {
     values
         .iter()
         .flat_map(|x| x.into_bigint().to_bytes_le())

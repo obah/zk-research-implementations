@@ -1,7 +1,7 @@
 use crate::gkr_circuit::{Circuit, Layer, Operation};
 use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
-use ark_bn254::Fq;
+use ark_ff::PrimeField;
 
 use fiat_shamir::fiat_shamir_transcript::{fq_vec_to_bytes, Transcript};
 use multilinear_polynomial::{
@@ -10,20 +10,25 @@ use multilinear_polynomial::{
 };
 use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 
+//todo changes to gkr
+//todo for the initial m_0, try to get length of vars and do random challenge for each into 1
+//todo check if wpoly for inputs and wpolys is 2^n if not, pad it with 0 to next 2^n
+//todo change Fq to F: Primefield
+
 #[derive(Debug)]
-pub struct Proof {
-    output_poly: MultilinearPoly<Fq>,
-    proof_polynomials: Vec<Vec<UnivariatePoly<Fq>>>,
-    claimed_evaluations: Vec<(Fq, Fq)>,
+pub struct Proof<F: PrimeField> {
+    output_poly: MultilinearPoly<F>,
+    proof_polynomials: Vec<Vec<UnivariatePoly<F>>>,
+    claimed_evaluations: Vec<(F, F)>,
 }
 
-pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
-    let mut transcript = Transcript::<Fq>::new();
+pub fn prove<F: PrimeField>(circuit: &mut Circuit<F>, inputs: &[F]) -> Proof<F> {
+    let mut transcript = Transcript::<F>::new();
     let mut circuit_evaluations = circuit.evaluate(inputs);
     let mut w_0 = circuit_evaluations.last().unwrap().to_vec();
 
     if w_0.len() == 1 {
-        w_0.push(Fq::from(0));
+        w_0.push(F::zero());
     }
     let output_poly = MultilinearPoly::new(w_0);
 
@@ -34,8 +39,8 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
     let mut claimed_evaluations = Vec::with_capacity(num_layers.saturating_sub(1));
     let mut current_rb = Vec::new();
     let mut current_rc = Vec::new();
-    let mut alpha = Fq::from(0);
-    let mut beta = Fq::from(0);
+    let mut alpha = F::zero();
+    let mut beta = F::zero();
 
     circuit_evaluations.reverse();
     let mut layers = circuit.layers.clone();
@@ -85,14 +90,14 @@ pub fn prove(circuit: &mut Circuit<Fq>, inputs: &[Fq]) -> Proof {
     }
 }
 
-pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
-    let mut transcript = Transcript::<Fq>::new();
+pub fn verify<F: PrimeField>(proof: Proof<F>, mut circuit: Circuit<F>, inputs: &[F]) -> bool {
+    let mut transcript = Transcript::<F>::new();
 
     let (mut current_claim, init_random_challenge) =
         initiate_protocol(&mut transcript, &proof.output_poly);
 
-    let mut alpha = Fq::from(0);
-    let mut beta = Fq::from(0);
+    let mut alpha = F::zero();
+    let mut beta = F::zero();
     let mut prev_sumcheck_random_challenges = Vec::new();
 
     circuit.layers.reverse();
@@ -155,10 +160,10 @@ pub fn verify(proof: Proof, mut circuit: Circuit<Fq>, inputs: &[Fq]) -> bool {
     true
 }
 
-fn initiate_protocol(
-    transcript: &mut Transcript<Fq>,
-    output_poly: &MultilinearPoly<Fq>,
-) -> (Fq, Fq) {
+fn initiate_protocol<F: PrimeField>(
+    transcript: &mut Transcript<F>,
+    output_poly: &MultilinearPoly<F>,
+) -> (F, F) {
     transcript.append(&fq_vec_to_bytes(&output_poly.evaluation));
 
     let random_challenge = transcript.get_random_challenge();
@@ -169,8 +174,12 @@ fn initiate_protocol(
     (m_0, random_challenge)
 }
 
-fn tensor_add_mul_polynomials(poly_a: &[Fq], poly_b: &[Fq], op: Operation) -> MultilinearPoly<Fq> {
-    let new_eval: Vec<Fq> = poly_a
+pub fn tensor_add_mul_polynomials<F: PrimeField>(
+    poly_a: &[F],
+    poly_b: &[F],
+    op: Operation,
+) -> MultilinearPoly<F> {
+    let new_eval: Vec<F> = poly_a
         .iter()
         .flat_map(|a| poly_b.iter().map(move |b| op.apply(*a, *b)))
         .collect();
@@ -178,7 +187,12 @@ fn tensor_add_mul_polynomials(poly_a: &[Fq], poly_b: &[Fq], op: Operation) -> Mu
     MultilinearPoly::new(new_eval)
 }
 
-pub fn get_fbc_poly(random_challenge: Fq, layer: Layer<Fq>, w_b: &[Fq], w_c: &[Fq]) -> SumPoly<Fq> {
+pub fn get_fbc_poly<F: PrimeField>(
+    random_challenge: F,
+    layer: Layer<F>,
+    w_b: &[F],
+    w_c: &[F],
+) -> SumPoly<F> {
     let add_i = layer
         .get_add_mul_i(Operation::Add)
         .partial_evaluate(0, &random_challenge);
@@ -195,15 +209,15 @@ pub fn get_fbc_poly(random_challenge: Fq, layer: Layer<Fq>, w_b: &[Fq], w_c: &[F
     SumPoly::new(vec![add_eval_product, mul_eval_product])
 }
 
-fn get_merged_fbc_poly(
-    layer: Layer<Fq>,
-    w_b: &[Fq],
-    w_c: &[Fq],
-    r_b: &[Fq],
-    r_c: &[Fq],
-    alpha: Fq,
-    beta: Fq,
-) -> SumPoly<Fq> {
+fn get_merged_fbc_poly<F: PrimeField>(
+    layer: Layer<F>,
+    w_b: &[F],
+    w_c: &[F],
+    r_b: &[F],
+    r_c: &[F],
+    alpha: F,
+    beta: F,
+) -> SumPoly<F> {
     let add_i = layer.get_add_mul_i(Operation::Add);
     let mul_i = layer.get_add_mul_i(Operation::Mul);
 
@@ -224,13 +238,13 @@ fn get_merged_fbc_poly(
     SumPoly::new(vec![add_product_poly, mul_product_poly])
 }
 
-fn get_verifier_claim(
-    layer: &Layer<Fq>,
-    init_random_challenge: Fq,
-    sumcheck_random_challenges: &[Fq],
-    o_1: Fq,
-    o_2: Fq,
-) -> Fq {
+fn get_verifier_claim<F: PrimeField>(
+    layer: &Layer<F>,
+    init_random_challenge: F,
+    sumcheck_random_challenges: &[F],
+    o_1: F,
+    o_2: F,
+) -> F {
     let (r_b, r_c) = sumcheck_random_challenges.split_at(sumcheck_random_challenges.len() / 2);
     let mut all_random_challenges = Vec::with_capacity(1 + r_b.len() + r_c.len());
     all_random_challenges.push(init_random_challenge);
@@ -246,15 +260,15 @@ fn get_verifier_claim(
     (a_r * (o_1 + o_2)) + (m_r * (o_1 * o_2))
 }
 
-fn get_merged_verifier_claim(
-    layer: &Layer<Fq>,
-    current_random_challenge: &[Fq],
-    previous_random_challenge: &[Fq],
-    o_1: Fq,
-    o_2: Fq,
-    alpha: Fq,
-    beta: Fq,
-) -> Fq {
+fn get_merged_verifier_claim<F: PrimeField>(
+    layer: &Layer<F>,
+    current_random_challenge: &[F],
+    previous_random_challenge: &[F],
+    o_1: F,
+    o_2: F,
+    alpha: F,
+    beta: F,
+) -> F {
     let (prev_r_b, prev_r_c) =
         previous_random_challenge.split_at(previous_random_challenge.len() / 2);
 
@@ -273,7 +287,7 @@ fn get_merged_verifier_claim(
     (a_r * (o_1 + o_2)) + (m_r * (o_1 * o_2))
 }
 
-fn evaluate_input_poly(inputs: &[Fq], sumcheck_random_challenges: &[Fq]) -> (Fq, Fq) {
+fn evaluate_input_poly<F: PrimeField>(inputs: &[F], sumcheck_random_challenges: &[F]) -> (F, F) {
     let input_poly = MultilinearPoly::new(inputs.to_vec());
 
     let (r_b, r_c) = sumcheck_random_challenges.split_at(sumcheck_random_challenges.len() / 2);
