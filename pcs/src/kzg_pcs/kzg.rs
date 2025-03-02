@@ -4,8 +4,6 @@ use ark_ff::PrimeField;
 use gkr::{gkr_circuit::Operation, gkr_protocol::tensor_add_mul_polynomials};
 use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
 
-//todo change G1, G2 to Pairing
-
 struct Proof {
     quotients: Vec<G1>,
 }
@@ -14,9 +12,8 @@ struct KZG {
     polynomial: MultilinearPoly<Fr>,
     g_1: G1,
     g_2: G2,
-    g1_taus: Vec<G1>,
     g2_taus: Vec<G2>,
-    lagrange_basis: Vec<G1>,
+    g1_lagrange_basis: Vec<G1>,
 }
 
 impl KZG {
@@ -28,15 +25,14 @@ impl KZG {
         let g_1 = G1::generator();
         let g_2 = G2::generator();
 
-        let (g1_taus, g2_taus, lagrange_basis) = KZG::run_trusted_setup(polynomial, g_1, g_2, taus);
+        let (g2_taus, g1_lagrange_basis) = KZG::run_trusted_setup(polynomial, g_1, g_2, taus);
 
         Self {
             polynomial: polynomial.clone(),
             g_1,
             g_2,
-            g1_taus,
             g2_taus,
-            lagrange_basis,
+            g1_lagrange_basis,
         }
     }
 
@@ -45,14 +41,8 @@ impl KZG {
         g_1: G1,
         g_2: G2,
         taus: Vec<Fr>,
-    ) -> (Vec<G1>, Vec<G2>, Vec<G1>) {
-        let g1_taus_affine = g_1.batch_mul(&taus);
+    ) -> (Vec<G2>, Vec<G1>) {
         let g2_taus_affine = g_2.batch_mul(&taus);
-
-        let g1_taus: Vec<G1> = g1_taus_affine
-            .into_iter()
-            .map(|point| point.into_group())
-            .collect();
 
         let g2_taus: Vec<G2> = g2_taus_affine
             .into_iter()
@@ -61,11 +51,11 @@ impl KZG {
 
         let lagrange_basis = get_lagrange_basis(poly.num_of_vars, &taus, g_1);
 
-        (g1_taus, g2_taus, lagrange_basis)
+        (g2_taus, lagrange_basis)
     }
 
     fn commit(&self) -> G1 {
-        evaluate_poly_with_l_basis_in_g1(&self.polynomial.evaluation, &self.lagrange_basis)
+        evaluate_poly_with_l_basis_in_g1(&self.polynomial.evaluation, &self.g1_lagrange_basis)
     }
 
     fn open(&self, opening_values: &[Fr]) -> Fr {
@@ -93,7 +83,8 @@ impl KZG {
                 quotient_vars += 1;
             }
 
-            let quotient_eval = evaluate_poly_with_l_basis_in_g1(&quotient, &self.lagrange_basis);
+            let quotient_eval =
+                evaluate_poly_with_l_basis_in_g1(&quotient, &self.g1_lagrange_basis);
 
             q_i.push(quotient_eval);
 
