@@ -4,6 +4,8 @@ use ark_ff::PrimeField;
 use gkr::{gkr_circuit::Operation, gkr_protocol::tensor_add_mul_polynomials};
 use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
 
+//todo change G1, G2 to Pairing
+
 struct Proof {
     quotients: Vec<G1>,
 }
