@@ -1,4 +1,4 @@
-# Zero Knowledge Proof Library
+# ZK Research Implementations
 
 A Rust implementation of various zero-knowledge proof protocols and cryptographic primitives.
 
