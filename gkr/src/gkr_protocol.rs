@@ -298,11 +298,14 @@ mod test {
         get_fbc_poly, get_folded_fbc_poly, prove, tensor_add_mul_polynomials, verify, Proof,
     };
     use crate::gkr_circuit::{Circuit, Gate, Layer, Operation};
-    use ark_bn254::Fq;
+    // use ark_bn254::Fq;
+    use field_tracker::{print_summary, Ft};
     use multilinear_polynomial::{
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::MultilinearPoly,
     };
+
+    type Fq = Ft!(ark_bn254::Fq);
 
     #[test]
     fn it_add_polys_correctly() {
@@ -419,12 +422,12 @@ mod test {
     fn test_valid_proving_and_verification() {
         let circuit_structure: Vec<Vec<Operation>> = vec![
             vec![
-                Operation::Mul,
-                Operation::Mul,
-                Operation::Mul,
-                Operation::Mul,
+                Operation::Add,
+                Operation::Add,
+                Operation::Add,
+                Operation::Add,
             ],
-            vec![Operation::Add, Operation::Add],
+            vec![Operation::Mul, Operation::Add],
             vec![Operation::Add],
         ];
 
@@ -446,6 +449,8 @@ mod test {
         let is_verified = verify(proof, circuit, &inputs);
 
         assert_eq!(is_verified, true);
+
+        print_summary!();
     }
 
     #[test]

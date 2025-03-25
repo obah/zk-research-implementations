@@ -138,7 +138,9 @@ fn insert_bit(value: usize, bit: usize) -> usize {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ark_bn254::Fq;
+    use field_tracker::{print_summary, Ft};
+
+    type Fq = Ft!(ark_bn254::Fq);
 
     #[test]
     fn it_partially_evaluates_any_multilinear() {
@@ -151,6 +153,8 @@ mod test {
         let result = polynomial.partial_evaluate(bit_a, &value_a);
 
         assert_eq!(result.evaluation, vec![Fq::from(15), Fq::from(50)]);
+
+        print_summary!();
     }
 
     #[test]

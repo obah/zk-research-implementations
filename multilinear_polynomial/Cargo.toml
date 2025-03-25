@@ -8,6 +8,9 @@ ark-bn254 = "0.5.0"
 ark-ff = "0.5.0"
 criterion = "0.5.1"
 
+[dev-dependencies]
+field-tracker = { git = "https://github.com/sublinearlabs/field-tracker", branch = "main" }
+
 [[bench]]
 name = "multilinear_poly_benchmark"
 harness = false

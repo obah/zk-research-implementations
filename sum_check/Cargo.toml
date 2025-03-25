@@ -11,6 +11,9 @@ fiat_shamir ={ path = "../fiat_shamir"}
 multilinear_polynomial ={ path = "../multilinear_polynomial"}
 univariate_polynomial = {path = "../univariate_polynomial"}
 
+[dev-dependencies]
+field-tracker = { git = "https://github.com/sublinearlabs/field-tracker", branch = "main" }
+
 [[bench]]
 name = "sum_check_benchmark"
 harness = false

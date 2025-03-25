@@ -184,8 +184,9 @@ fn get_round_partial_polynomial_proof<F: PrimeField>(polynomial: &[F]) -> Vec<F>
 
 #[cfg(test)]
 mod test {
-    use ark_bn254::Fq;
+    // use ark_bn254::Fq;
     use fiat_shamir::fiat_shamir_transcript::Transcript;
+    use field_tracker::{print_summary, Ft};
     use multilinear_polynomial::{
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::MultilinearPoly,
@@ -195,24 +196,19 @@ mod test {
 
     use super::{get_round_partial_polynomial_proof_gkr, gkr_prove, gkr_verify};
 
+    type Fq = Ft!(ark_bn254::Fq);
+
     #[test]
     fn test_valid_proving_and_verification() {
-        let initial_polynomial = MultilinearPoly::new(vec![
-            Fq::from(0),
-            Fq::from(0),
-            Fq::from(0),
-            Fq::from(2),
-            Fq::from(0),
-            Fq::from(10),
-            Fq::from(0),
-            Fq::from(17),
-        ]);
+        let initial_polynomial = MultilinearPoly::new(vec![Fq::from(10); 1 << 20]);
 
         let proof = prove(&initial_polynomial);
 
         let is_verified = verify(&initial_polynomial, proof);
 
         assert_eq!(is_verified, true);
+
+        print_summary!();
     }
 
     #[test]
