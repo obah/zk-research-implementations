@@ -466,6 +466,7 @@ dependencies = [
  "ark-ff",
  "fiat_shamir",
  "field-tracker",
+ "kzg_pcs",
  "multilinear_polynomial",
  "sum_check",
  "univariate_polynomial",
@@ -559,7 +560,6 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-std",
- "gkr",
  "multilinear_polynomial",
 ]
 

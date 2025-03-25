@@ -1,8 +1,7 @@
 use ark_bls12_381::{Bls12_381, Fr, G1Projective as G1, G2Projective as G2};
 use ark_ec::{pairing::Pairing, AffineRepr, PrimeGroup, ScalarMul};
 use ark_ff::PrimeField;
-use gkr::{gkr_circuit::Operation, gkr_protocol::tensor_add_mul_polynomials};
-use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
+use multilinear_polynomial::multilinear_polynomial_evaluation::{MultilinearPoly, Operation};
 
 struct Proof {
     quotients: Vec<G1>,
@@ -161,7 +160,7 @@ fn blow_up_poly(poly: &[Fr], bigger_poly_len: usize) -> Vec<Fr> {
 
     let blow_up_poly = vec![Fr::from(1); blow_up_factor];
 
-    tensor_add_mul_polynomials(&blow_up_poly, poly, Operation::Mul).evaluation
+    MultilinearPoly::tensor_add_mul_polynomials(&blow_up_poly, poly, Operation::Mul).evaluation
 }
 
 fn generate_bhc(bits: usize) -> Vec<Vec<u8>> {

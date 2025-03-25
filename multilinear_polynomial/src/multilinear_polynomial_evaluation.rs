@@ -1,6 +1,21 @@
 use ark_ff::PrimeField;
 use std::ops::{Add, Mul, Sub};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Operation {
+    Add,
+    Mul,
+}
+
+impl Operation {
+    pub fn apply<F: PrimeField>(self, a: F, b: F) -> F {
+        match self {
+            Operation::Add => a + b,
+            Operation::Mul => a * b,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct MultilinearPoly<F: PrimeField> {
     pub evaluation: Vec<F>,
@@ -79,6 +94,19 @@ impl<F: PrimeField> MultilinearPoly<F> {
         let result = self.evaluation.iter().map(|eval| *eval * value).collect();
 
         Self::new(result)
+    }
+
+    pub fn tensor_add_mul_polynomials(
+        poly_a: &[F],
+        poly_b: &[F],
+        op: Operation,
+    ) -> MultilinearPoly<F> {
+        let new_eval: Vec<F> = poly_a
+            .iter()
+            .flat_map(|a| poly_b.iter().map(move |b| op.apply(*a, *b)))
+            .collect();
+
+        MultilinearPoly::new(new_eval)
     }
 }
 

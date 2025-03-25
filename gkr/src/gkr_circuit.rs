@@ -1,20 +1,5 @@
 use ark_ff::PrimeField;
-use multilinear_polynomial::multilinear_polynomial_evaluation::MultilinearPoly;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Operation {
-    Add,
-    Mul,
-}
-
-impl Operation {
-    pub fn apply<F: PrimeField>(self, a: F, b: F) -> F {
-        match self {
-            Operation::Add => a + b,
-            Operation::Mul => a * b,
-        }
-    }
-}
+use multilinear_polynomial::multilinear_polynomial_evaluation::{MultilinearPoly, Operation};
 
 #[derive(Debug, Clone)]
 pub struct Gate<F: PrimeField> {

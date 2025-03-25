@@ -1,11 +1,11 @@
-use crate::gkr_circuit::{Circuit, Layer, Operation};
+use crate::gkr_circuit::{Circuit, Layer};
 
 use ark_ff::PrimeField;
 
 use fiat_shamir::fiat_shamir_transcript::{fq_vec_to_bytes, Transcript};
 use multilinear_polynomial::{
     composed_polynomial::{ProductPoly, SumPoly},
-    multilinear_polynomial_evaluation::MultilinearPoly,
+    multilinear_polynomial_evaluation::{MultilinearPoly, Operation},
 };
 use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
@@ -169,19 +169,6 @@ fn initiate_protocol<F: PrimeField>(
     (m_0, random_challenge)
 }
 
-pub fn tensor_add_mul_polynomials<F: PrimeField>(
-    poly_a: &[F],
-    poly_b: &[F],
-    op: Operation,
-) -> MultilinearPoly<F> {
-    let new_eval: Vec<F> = poly_a
-        .iter()
-        .flat_map(|a| poly_b.iter().map(move |b| op.apply(*a, *b)))
-        .collect();
-
-    MultilinearPoly::new(new_eval)
-}
-
 pub fn get_fbc_poly<F: PrimeField>(
     random_challenge: F,
     layer: Layer<F>,
@@ -195,8 +182,8 @@ pub fn get_fbc_poly<F: PrimeField>(
         .get_add_mul_i(Operation::Mul)
         .partial_evaluate(0, &random_challenge);
 
-    let summed_w_poly = tensor_add_mul_polynomials(w_b, w_c, Operation::Add);
-    let multiplied_w_poly = tensor_add_mul_polynomials(w_b, w_c, Operation::Mul);
+    let summed_w_poly = MultilinearPoly::tensor_add_mul_polynomials(w_b, w_c, Operation::Add);
+    let multiplied_w_poly = MultilinearPoly::tensor_add_mul_polynomials(w_b, w_c, Operation::Mul);
 
     let add_eval_product = ProductPoly::new(vec![add_i.evaluation, summed_w_poly.evaluation]);
     let mul_eval_product = ProductPoly::new(vec![mul_i.evaluation, multiplied_w_poly.evaluation]);
@@ -222,8 +209,8 @@ fn get_folded_fbc_poly<F: PrimeField>(
     let summed_mul_i = mul_i.multi_partial_evaluate(r_b).scale(alpha)
         + mul_i.multi_partial_evaluate(r_c).scale(beta);
 
-    let summed_w_poly = tensor_add_mul_polynomials(w_b, w_c, Operation::Add);
-    let multiplied_w_poly = tensor_add_mul_polynomials(w_b, w_c, Operation::Mul);
+    let summed_w_poly = MultilinearPoly::tensor_add_mul_polynomials(w_b, w_c, Operation::Add);
+    let multiplied_w_poly = MultilinearPoly::tensor_add_mul_polynomials(w_b, w_c, Operation::Mul);
 
     let add_product_poly =
         ProductPoly::new(vec![summed_add_i.evaluation, summed_w_poly.evaluation]);
@@ -295,15 +282,13 @@ fn evaluate_input_poly<F: PrimeField>(inputs: &[F], sumcheck_random_challenges: 
 
 #[cfg(test)]
 mod test {
-    use super::{
-        get_fbc_poly, get_folded_fbc_poly, prove, tensor_add_mul_polynomials, verify, Proof,
-    };
-    use crate::gkr_circuit::{Circuit, Gate, Layer, Operation};
+    use super::{get_fbc_poly, get_folded_fbc_poly, prove, verify, Proof};
+    use crate::gkr_circuit::{Circuit, Gate, Layer};
     // use ark_bn254::Fq;
     use field_tracker::{print_summary, Ft};
     use multilinear_polynomial::{
         composed_polynomial::{ProductPoly, SumPoly},
-        multilinear_polynomial_evaluation::MultilinearPoly,
+        multilinear_polynomial_evaluation::{MultilinearPoly, Operation},
     };
     use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
@@ -316,7 +301,7 @@ mod test {
 
         let expected_poly = vec![Fq::from(0), Fq::from(3), Fq::from(2), Fq::from(5)];
 
-        let result = tensor_add_mul_polynomials(poly_a, poly_b, Operation::Add);
+        let result = MultilinearPoly::tensor_add_mul_polynomials(poly_a, poly_b, Operation::Add);
 
         assert_eq!(result.evaluation, expected_poly);
 
@@ -334,7 +319,7 @@ mod test {
             Fq::from(5),
         ];
 
-        let result = tensor_add_mul_polynomials(poly_a, poly_b, Operation::Add);
+        let result = MultilinearPoly::tensor_add_mul_polynomials(poly_a, poly_b, Operation::Add);
 
         assert_eq!(result.evaluation, expected_poly);
     }
@@ -346,7 +331,7 @@ mod test {
 
         let expected_poly = vec![Fq::from(0), Fq::from(0), Fq::from(0), Fq::from(6)];
 
-        let result = tensor_add_mul_polynomials(poly_a, poly_b, Operation::Mul);
+        let result = MultilinearPoly::tensor_add_mul_polynomials(poly_a, poly_b, Operation::Mul);
 
         assert_eq!(result.evaluation, expected_poly);
 
@@ -364,7 +349,7 @@ mod test {
             Fq::from(6),
         ];
 
-        let result = tensor_add_mul_polynomials(poly_a, poly_b, Operation::Mul);
+        let result = MultilinearPoly::tensor_add_mul_polynomials(poly_a, poly_b, Operation::Mul);
 
         assert_eq!(result.evaluation, expected_poly);
     }

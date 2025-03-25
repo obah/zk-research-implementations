@@ -10,4 +10,3 @@ ark-ec = "0.5.0"
 ark-ff = "0.5.0"
 ark-std = "0.5.0"
 multilinear_polynomial = { path = "../multilinear_polynomial"}
-gkr ={ path = "../gkr"}
