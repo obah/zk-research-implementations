@@ -8,11 +8,12 @@ use multilinear_polynomial::{
     multilinear_polynomial_evaluation::MultilinearPoly,
 };
 use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
+use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
 #[derive(Debug)]
 pub struct Proof<F: PrimeField> {
     output_poly: MultilinearPoly<F>,
-    proof_polynomials: Vec<Vec<Vec<F>>>,
+    proof_polynomials: Vec<Vec<UnivariatePoly<F>>>,
     claimed_evaluations: Vec<(F, F)>,
 }
 
@@ -304,6 +305,7 @@ mod test {
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::MultilinearPoly,
     };
+    use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     type Fq = Ft!(ark_bn254::Fq);
 
@@ -462,12 +464,30 @@ mod test {
 
         let circuit = Circuit::new(circuit_structure);
 
-        let dummy_proof_poly_1 = vec![Fq::from(10), Fq::from(5)];
-        let dummy_proof_poly_2 = vec![Fq::from(10), Fq::from(5)];
-        let dummy_proof_poly_3 = vec![Fq::from(10), Fq::from(5)];
-        let dummy_proof_poly_4 = vec![Fq::from(10), Fq::from(5)];
-        let dummy_proof_poly_5 = vec![Fq::from(10), Fq::from(5)];
-        let dummy_proof_poly_6 = vec![Fq::from(10), Fq::from(5)];
+        let dummy_proof_poly_1 = UnivariatePoly::interpolate(vec![
+            (Fq::from(0), Fq::from(10)),
+            (Fq::from(1), Fq::from(5)),
+        ]);
+        let dummy_proof_poly_2 = UnivariatePoly::interpolate(vec![
+            (Fq::from(0), Fq::from(10)),
+            (Fq::from(1), Fq::from(5)),
+        ]);
+        let dummy_proof_poly_3 = UnivariatePoly::interpolate(vec![
+            (Fq::from(0), Fq::from(10)),
+            (Fq::from(1), Fq::from(5)),
+        ]);
+        let dummy_proof_poly_4 = UnivariatePoly::interpolate(vec![
+            (Fq::from(0), Fq::from(10)),
+            (Fq::from(1), Fq::from(5)),
+        ]);
+        let dummy_proof_poly_5 = UnivariatePoly::interpolate(vec![
+            (Fq::from(0), Fq::from(10)),
+            (Fq::from(1), Fq::from(5)),
+        ]);
+        let dummy_proof_poly_6 = UnivariatePoly::interpolate(vec![
+            (Fq::from(0), Fq::from(10)),
+            (Fq::from(1), Fq::from(5)),
+        ]);
 
         let invalid_proof = Proof {
             output_poly: MultilinearPoly::new(vec![Fq::from(10), Fq::from(0)]),
