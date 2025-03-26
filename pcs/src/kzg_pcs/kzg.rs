@@ -1,22 +1,22 @@
-use ark_bls12_381::{Bls12_381, Fr, G1Projective as G1, G2Projective as G2};
-use ark_ec::{pairing::Pairing, AffineRepr, PrimeGroup, ScalarMul};
+use ark_bls12_381::{Bls12_381, G1Projective as G1, G2Projective as G2};
+use ark_ec::{pairing::Pairing, PrimeGroup};
 use ark_ff::PrimeField;
 use multilinear_polynomial::multilinear_polynomial_evaluation::{MultilinearPoly, Operation};
 
-struct Proof {
-    quotients: Vec<G1>,
+pub struct KzgProof {
+    pub quotients: Vec<G1>,
 }
 
-struct KZG {
-    polynomial: MultilinearPoly<Fr>,
+pub struct KZG<F: PrimeField> {
+    polynomial: MultilinearPoly<F>,
     g_1: G1,
     g_2: G2,
     g2_taus: Vec<G2>,
     g1_lagrange_basis: Vec<G1>,
 }
 
-impl KZG {
-    fn new(polynomial: &MultilinearPoly<Fr>, taus: Vec<Fr>) -> Self {
+impl<F: PrimeField> KZG<F> {
+    pub fn new(polynomial: &MultilinearPoly<F>, taus: Vec<F>) -> Self {
         if taus.len() != polynomial.num_of_vars {
             panic!("invalid taus or polynomials");
         }
@@ -36,16 +36,14 @@ impl KZG {
     }
 
     fn run_trusted_setup(
-        poly: &MultilinearPoly<Fr>,
+        poly: &MultilinearPoly<F>,
         g_1: G1,
         g_2: G2,
-        taus: Vec<Fr>,
+        taus: Vec<F>,
     ) -> (Vec<G2>, Vec<G1>) {
-        let g2_taus_affine = g_2.batch_mul(&taus);
-
-        let g2_taus: Vec<G2> = g2_taus_affine
-            .into_iter()
-            .map(|point| point.into_group())
+        let g2_taus: Vec<G2> = taus
+            .iter()
+            .map(|tau| g_2.mul_bigint(tau.into_bigint()))
             .collect();
 
         let lagrange_basis = get_lagrange_basis(poly.num_of_vars, &taus, g_1);
@@ -57,11 +55,11 @@ impl KZG {
         evaluate_poly_with_l_basis_in_g1(&self.polynomial.evaluation, &self.g1_lagrange_basis)
     }
 
-    fn open(&self, opening_values: &[Fr]) -> Fr {
+    fn open(&self, opening_values: &[F]) -> F {
         self.polynomial.evaluate(opening_values.to_vec())
     }
 
-    fn get_proof(&self, opened_value: Fr, opening_values: &[Fr]) -> Proof {
+    fn get_proof(&self, opened_value: F, opening_values: &[F]) -> KzgProof {
         let mut poly_minus_v = MultilinearPoly::new(
             self.polynomial
                 .evaluation
@@ -92,15 +90,15 @@ impl KZG {
             poly_minus_v = MultilinearPoly::new(remainder_poly);
         }
 
-        Proof { quotients: q_i }
+        KzgProof { quotients: q_i }
     }
 
     fn verify(
         &self,
         commitment: G1,
-        opened_value: Fr,
-        proof: Proof,
-        opening_values: &[Fr],
+        opened_value: F,
+        proof: KzgProof,
+        opening_values: &[F],
     ) -> bool {
         if proof.quotients.len() != opening_values.len() {
             panic!("num of quotients in proof not equal to num of opening values");
@@ -126,7 +124,10 @@ impl KZG {
     }
 }
 
-fn evaluate_poly_with_l_basis_in_g1(poly_evaluations: &[Fr], lagrange_basis: &[G1]) -> G1 {
+fn evaluate_poly_with_l_basis_in_g1<F: PrimeField>(
+    poly_evaluations: &[F],
+    lagrange_basis: &[G1],
+) -> G1 {
     if poly_evaluations.len() != lagrange_basis.len() {
         panic!("invalid polynomial or lagrange basis");
     }
@@ -138,13 +139,13 @@ fn evaluate_poly_with_l_basis_in_g1(poly_evaluations: &[Fr], lagrange_basis: &[G
         .sum()
 }
 
-fn get_remainder(poly: &MultilinearPoly<Fr>, value: Fr, bit: usize) -> Vec<Fr> {
+fn get_remainder<F: PrimeField>(poly: &MultilinearPoly<F>, value: F, bit: usize) -> Vec<F> {
     poly.partial_evaluate(bit, &value).evaluation
 }
 
-fn get_quotient(poly: &MultilinearPoly<Fr>, bit: usize) -> Vec<Fr> {
-    let mut eval_0 = poly.partial_evaluate(bit, &Fr::from(0));
-    let mut eval_1 = poly.partial_evaluate(bit, &Fr::from(1));
+fn get_quotient<F: PrimeField>(poly: &MultilinearPoly<F>, bit: usize) -> Vec<F> {
+    let mut eval_0 = poly.partial_evaluate(bit, &F::zero());
+    let mut eval_1 = poly.partial_evaluate(bit, &F::one());
 
     if eval_0.evaluation.len() > eval_1.evaluation.len() {
         eval_1 = MultilinearPoly::new(blow_up_poly(&eval_1.evaluation, eval_0.evaluation.len()));
@@ -155,10 +156,10 @@ fn get_quotient(poly: &MultilinearPoly<Fr>, bit: usize) -> Vec<Fr> {
     (eval_1 - eval_0).evaluation
 }
 
-fn blow_up_poly(poly: &[Fr], bigger_poly_len: usize) -> Vec<Fr> {
+fn blow_up_poly<F: PrimeField>(poly: &[F], bigger_poly_len: usize) -> Vec<F> {
     let blow_up_factor = bigger_poly_len / poly.len();
 
-    let blow_up_poly = vec![Fr::from(1); blow_up_factor];
+    let blow_up_poly = vec![F::one(); blow_up_factor];
 
     MultilinearPoly::tensor_add_mul_polynomials(&blow_up_poly, poly, Operation::Mul).evaluation
 }
@@ -175,7 +176,7 @@ fn generate_bhc(bits: usize) -> Vec<Vec<u8>> {
         .collect()
 }
 
-fn get_lagrange_basis(num_of_vars: usize, unenc_taus: &[Fr], g_1: G1) -> Vec<G1> {
+fn get_lagrange_basis<F: PrimeField>(num_of_vars: usize, unenc_taus: &[F], g_1: G1) -> Vec<G1> {
     if num_of_vars < 1 {
         panic!("Invalid num of vars for lagrange basis");
     }
@@ -184,12 +185,12 @@ fn get_lagrange_basis(num_of_vars: usize, unenc_taus: &[Fr], g_1: G1) -> Vec<G1>
     let bhc = generate_bhc(num_of_vars);
 
     for layer in bhc {
-        let mut layer_eval = Fr::from(1);
+        let mut layer_eval = F::one();
 
         for (i, bit) in layer.iter().enumerate() {
             let bit_scalar;
             if *bit == 0 {
-                bit_scalar = Fr::from(1) - unenc_taus[i];
+                bit_scalar = F::one() - unenc_taus[i];
             } else {
                 bit_scalar = unenc_taus[i];
             }
@@ -200,9 +201,9 @@ fn get_lagrange_basis(num_of_vars: usize, unenc_taus: &[Fr], g_1: G1) -> Vec<G1>
         result.push(layer_eval);
     }
 
-    g_1.batch_mul(&result)
-        .into_iter()
-        .map(|point| point.into_group())
+    result
+        .iter()
+        .map(|x| g_1.mul_bigint(x.into_bigint()))
         .collect()
 }
 
@@ -377,14 +378,12 @@ mod test {
 
         let expected_quotients = vec![Fr::from(6), Fr::from(18), Fr::from(4)];
 
-        let expected_quotients_g1 = kzg_instance
-            .g_1
-            .batch_mul(&expected_quotients)
-            .into_iter()
-            .map(|point| point.into_group())
+        let expected_quotients_g1 = expected_quotients
+            .iter()
+            .map(|x| kzg_instance.g_1.mul_bigint(x.into_bigint()))
             .collect();
 
-        let expected_proof = Proof {
+        let expected_proof = KzgProof {
             quotients: expected_quotients_g1,
         };
 
@@ -434,7 +433,7 @@ mod test {
         let commitment = kzg_instance.commit();
         let opened_value = kzg_instance.open(opening_values);
 
-        let invalid_proof = Proof {
+        let invalid_proof = KzgProof {
             quotients: vec![G1::generator(), G1::generator(), G1::generator()],
         };
 
