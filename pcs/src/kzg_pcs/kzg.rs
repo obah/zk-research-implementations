@@ -3,20 +3,20 @@ use ark_ec::{pairing::Pairing, PrimeGroup};
 use ark_ff::PrimeField;
 use multilinear_polynomial::multilinear_polynomial_evaluation::{MultilinearPoly, Operation};
 
-pub struct KzgProof {
-    pub quotients: Vec<G1>,
-}
+type Proof = Vec<G1>;
 
-pub struct KZG<F: PrimeField> {
-    polynomial: MultilinearPoly<F>,
-    g_1: G1,
-    g_2: G2,
-    g2_taus: Vec<G2>,
+pub struct KZG {
     g1_lagrange_basis: Vec<G1>,
+    g2_taus: Vec<G2>,
 }
 
-impl<F: PrimeField> KZG<F> {
-    pub fn new(polynomial: &MultilinearPoly<F>, taus: Vec<F>) -> Self {
+// let g2_taus: Vec<G2> = taus
+// .iter()
+// .map(|tau| g_2.mul_bigint(tau.into_bigint()))
+// .collect();
+
+impl KZG {
+    pub fn new<F: PrimeField>(polynomial: &MultilinearPoly<F>, taus: Vec<F>) -> Self {
         if taus.len() != polynomial.num_of_vars {
             panic!("invalid taus or polynomials");
         }
@@ -24,52 +24,53 @@ impl<F: PrimeField> KZG<F> {
         let g_1 = G1::generator();
         let g_2 = G2::generator();
 
-        let (g2_taus, g1_lagrange_basis) = KZG::run_trusted_setup(polynomial, g_1, g_2, taus);
+        let (g1_lagrange_basis, g2_taus) = KZG::run_trusted_setup(polynomial, g_1, g_2, taus);
 
         Self {
-            polynomial: polynomial.clone(),
-            g_1,
-            g_2,
-            g2_taus,
             g1_lagrange_basis,
+            g2_taus,
         }
     }
 
-    fn run_trusted_setup(
+    fn run_trusted_setup<F: PrimeField>(
         poly: &MultilinearPoly<F>,
         g_1: G1,
         g_2: G2,
         taus: Vec<F>,
-    ) -> (Vec<G2>, Vec<G1>) {
+    ) -> (Vec<G1>, Vec<G2>) {
+        let lagrange_basis = get_lagrange_basis(poly.num_of_vars, &taus, g_1);
+
         let g2_taus: Vec<G2> = taus
             .iter()
             .map(|tau| g_2.mul_bigint(tau.into_bigint()))
             .collect();
 
-        let lagrange_basis = get_lagrange_basis(poly.num_of_vars, &taus, g_1);
-
-        (g2_taus, lagrange_basis)
+        (lagrange_basis, g2_taus)
     }
 
-    fn commit(&self) -> G1 {
-        evaluate_poly_with_l_basis_in_g1(&self.polynomial.evaluation, &self.g1_lagrange_basis)
+    pub fn commit<F: PrimeField>(&self, poly: &MultilinearPoly<F>) -> G1 {
+        evaluate_poly_with_l_basis_in_g1(&poly.evaluation, &self.g1_lagrange_basis)
     }
 
-    fn open(&self, opening_values: &[F]) -> F {
-        self.polynomial.evaluate(opening_values.to_vec())
+    pub fn open<F: PrimeField>(&self, opening_values: &[F], poly: &MultilinearPoly<F>) -> F {
+        poly.evaluate(opening_values.to_vec())
     }
 
-    fn get_proof(&self, opened_value: F, opening_values: &[F]) -> KzgProof {
+    pub fn get_proof<F: PrimeField>(
+        &self,
+        opened_value: F,
+        opening_values: &[F],
+        poly: &MultilinearPoly<F>,
+    ) -> Proof {
         let mut poly_minus_v = MultilinearPoly::new(
-            self.polynomial
-                .evaluation
+            poly.evaluation
                 .iter()
                 .map(|eval| *eval - opened_value)
                 .collect::<Vec<_>>(),
         );
 
         let mut q_i: Vec<G1> = Vec::with_capacity(opening_values.len());
-        let full_n_vars = self.polynomial.num_of_vars;
+        let full_n_vars = poly.num_of_vars;
         for value in opening_values {
             let mut quotient = get_quotient(&poly_minus_v, 0);
 
@@ -90,29 +91,32 @@ impl<F: PrimeField> KZG<F> {
             poly_minus_v = MultilinearPoly::new(remainder_poly);
         }
 
-        KzgProof { quotients: q_i }
+        q_i
     }
 
-    fn verify(
-        &self,
+    pub fn verify<F: PrimeField>(
         commitment: G1,
         opened_value: F,
-        proof: KzgProof,
+        proof: Proof,
         opening_values: &[F],
+        g2_taus: Vec<G2>,
     ) -> bool {
-        if proof.quotients.len() != opening_values.len() {
+        if proof.len() != opening_values.len() {
             panic!("num of quotients in proof not equal to num of opening values");
         }
 
-        let lhs = commitment - self.g_1.mul_bigint(opened_value.into_bigint());
-        let lhs_gt = Bls12_381::pairing(lhs, self.g_2);
+        let g_1 = G1::generator();
+        let g_2 = G2::generator();
+
+        let lhs = commitment - g_1.mul_bigint(opened_value.into_bigint());
+        let lhs_gt = Bls12_381::pairing(lhs, g_2);
 
         let mut rhs = Vec::with_capacity(opening_values.len());
 
         for i in 0..opening_values.len() {
-            let quotient = proof.quotients[i];
-            let opening_value_g2 = self.g_2.mul_bigint(opening_values[i].into_bigint());
-            let factor = self.g2_taus[i] - opening_value_g2;
+            let quotient = proof[i];
+            let opening_value_g2 = g_2.mul_bigint(opening_values[i].into_bigint());
+            let factor = g2_taus[i] - opening_value_g2;
 
             let rhs_i = Bls12_381::pairing(quotient, factor);
             rhs.push(rhs_i);
@@ -321,12 +325,17 @@ mod test {
             Fr::from(3),
             Fr::from(7),
         ];
+
+        let poly = MultilinearPoly::new(poly_evals.to_vec());
+
         let unenc_taus = vec![Fr::from(5), Fr::from(2), Fr::from(3)];
-        let kzg_instance = KZG::new(&MultilinearPoly::new(poly_evals.to_vec()), unenc_taus);
+        let kzg_instance = KZG::new(&poly, unenc_taus);
 
-        let commit_result = kzg_instance.commit();
+        let commit_result = kzg_instance.commit(&poly);
 
-        let expected_commit_result = kzg_instance.g_1.mul_bigint(Fr::from(42).into_bigint());
+        let g_1 = G1::generator();
+
+        let expected_commit_result = g_1.mul_bigint(Fr::from(42).into_bigint());
 
         assert_eq!(commit_result, expected_commit_result);
     }
@@ -343,12 +352,13 @@ mod test {
             Fr::from(3),
             Fr::from(7),
         ];
+        let poly = MultilinearPoly::new(poly_evals.to_vec());
         let unenc_taus = vec![Fr::from(5), Fr::from(2), Fr::from(3)];
-        let kzg_instance = KZG::new(&MultilinearPoly::new(poly_evals.to_vec()), unenc_taus);
+        let kzg_instance = KZG::new(&poly, unenc_taus);
 
         let opening_values = &[Fr::from(6), Fr::from(4), Fr::from(0)];
 
-        let open_result = kzg_instance.open(opening_values);
+        let open_result = kzg_instance.open(opening_values, &poly);
 
         let expected_open_result = Fr::from(72);
 
@@ -367,27 +377,26 @@ mod test {
             Fr::from(3),
             Fr::from(7),
         ];
+        let poly = MultilinearPoly::new(poly_evals.to_vec());
         let unenc_taus = vec![Fr::from(5), Fr::from(2), Fr::from(3)];
-        let kzg_instance = KZG::new(&MultilinearPoly::new(poly_evals.to_vec()), unenc_taus);
+        let kzg_instance = KZG::new(&poly, unenc_taus);
 
         let opening_values = &[Fr::from(6), Fr::from(4), Fr::from(0)];
 
-        let opened_value = kzg_instance.open(opening_values);
+        let opened_value = kzg_instance.open(opening_values, &poly);
 
-        let proof_result = kzg_instance.get_proof(opened_value, opening_values);
+        let proof_result = kzg_instance.get_proof(opened_value, opening_values, &poly);
 
         let expected_quotients = vec![Fr::from(6), Fr::from(18), Fr::from(4)];
 
-        let expected_quotients_g1 = expected_quotients
+        let g_1 = G1::generator();
+
+        let expected_quotients_g1: Vec<G1> = expected_quotients
             .iter()
-            .map(|x| kzg_instance.g_1.mul_bigint(x.into_bigint()))
+            .map(|x| g_1.mul_bigint(x.into_bigint()))
             .collect();
 
-        let expected_proof = KzgProof {
-            quotients: expected_quotients_g1,
-        };
-
-        assert_eq!(proof_result.quotients, expected_proof.quotients);
+        assert_eq!(proof_result, expected_quotients_g1);
     }
 
     #[test]
@@ -402,15 +411,21 @@ mod test {
             Fr::from(3),
             Fr::from(7),
         ];
-
+        let poly = MultilinearPoly::new(poly_evals.to_vec());
         let unenc_taus = vec![Fr::from(5), Fr::from(2), Fr::from(3)];
-        let kzg_instance = KZG::new(&MultilinearPoly::new(poly_evals.to_vec()), unenc_taus);
+        let kzg_instance = KZG::new(&poly, unenc_taus);
         let opening_values = &[Fr::from(6), Fr::from(4), Fr::from(0)];
-        let commitment = kzg_instance.commit();
-        let opened_value = kzg_instance.open(opening_values);
-        let proof = kzg_instance.get_proof(opened_value, opening_values);
+        let commitment = kzg_instance.commit(&poly);
+        let opened_value = kzg_instance.open(opening_values, &poly);
+        let proof = kzg_instance.get_proof(opened_value, opening_values, &poly);
 
-        let is_verified = kzg_instance.verify(commitment, opened_value, proof, opening_values);
+        let is_verified = KZG::verify(
+            commitment,
+            opened_value,
+            proof,
+            opening_values,
+            kzg_instance.g2_taus,
+        );
 
         assert_eq!(is_verified, true);
     }
@@ -427,18 +442,22 @@ mod test {
             Fr::from(3),
             Fr::from(7),
         ];
+        let poly = MultilinearPoly::new(poly_evals.to_vec());
         let unenc_taus = vec![Fr::from(5), Fr::from(2), Fr::from(3)];
-        let kzg_instance = KZG::new(&MultilinearPoly::new(poly_evals.to_vec()), unenc_taus);
+        let kzg_instance = KZG::new(&poly, unenc_taus);
         let opening_values = &[Fr::from(6), Fr::from(4), Fr::from(0)];
-        let commitment = kzg_instance.commit();
-        let opened_value = kzg_instance.open(opening_values);
+        let commitment = kzg_instance.commit(&poly);
+        let opened_value = kzg_instance.open(opening_values, &poly);
 
-        let invalid_proof = KzgProof {
-            quotients: vec![G1::generator(), G1::generator(), G1::generator()],
-        };
+        let invalid_proof = vec![G1::generator(), G1::generator(), G1::generator()];
 
-        let is_verified =
-            kzg_instance.verify(commitment, opened_value, invalid_proof, opening_values);
+        let is_verified = KZG::verify(
+            commitment,
+            opened_value,
+            invalid_proof,
+            opening_values,
+            kzg_instance.g2_taus,
+        );
 
         assert_eq!(is_verified, false);
     }
