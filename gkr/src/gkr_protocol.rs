@@ -12,7 +12,7 @@ use multilinear_polynomial::{
 use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct KzgProof<F: PrimeField> {
     kzg_setup: KZG,
     commitment: G1,
@@ -111,20 +111,11 @@ pub fn prove<F: PrimeField>(circuit: &mut Circuit<F>, inputs: &[F]) -> GkrProof<
     let w_c_proof = kzg_instance.get_proof(w_c_eval, &current_rc, &input_poly);
 
     let input_proof = KzgProof {
-        kzg_setup: kzg_instance.clone(),
+        kzg_setup: kzg_instance,
         commitment,
-        proof: [w_b_proof.clone(), w_c_proof],
+        proof: [w_b_proof, w_c_proof],
         opened_evals: [w_b_eval, w_c_eval],
     };
-
-    //* */
-    let wb_verified = KZG::verify(
-        commitment,
-        w_b_eval,
-        w_b_proof,
-        &current_rb,
-        kzg_instance.g2_taus,
-    );
 
     GkrProof {
         output_poly,
@@ -166,22 +157,22 @@ pub fn verify<F: PrimeField>(proof: GkrProof<F>, mut circuit: Circuit<F>) -> boo
         if i == num_layers - 1 {
             let (r_b, r_c) = current_random_challenge.split_at(current_random_challenge.len() / 2);
 
-            let kzg = proof.input_proof.clone();
+            let kzg = &proof.input_proof;
 
             let wb_verified = KZG::verify(
                 kzg.commitment,
-                kzg.opened_evals[0],
-                kzg.proof[0].clone(),
+                &kzg.opened_evals[0],
+                &kzg.proof[0],
                 r_b,
-                kzg.kzg_setup.g2_taus.clone(),
+                &kzg.kzg_setup.g2_taus,
             );
 
             let wc_verified = KZG::verify(
                 kzg.commitment,
-                kzg.opened_evals[1],
-                kzg.proof[1].clone(),
+                &kzg.opened_evals[1],
+                &kzg.proof[1],
                 r_c,
-                kzg.kzg_setup.g2_taus,
+                &kzg.kzg_setup.g2_taus,
             );
 
             if !wb_verified || !wc_verified {

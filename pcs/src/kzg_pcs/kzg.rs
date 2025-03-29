@@ -5,7 +5,7 @@ use multilinear_polynomial::multilinear_polynomial_evaluation::{MultilinearPoly,
 
 type Proof = Vec<G1>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct KZG {
     g1_lagrange_basis: Vec<G1>,
     pub g2_taus: Vec<G2>,
@@ -92,10 +92,10 @@ impl KZG {
 
     pub fn verify<F: PrimeField>(
         commitment: G1,
-        opened_value: F,
-        proof: Proof,
+        opened_value: &F,
+        proof: &Proof,
         opening_values: &[F],
-        g2_taus: Vec<G2>,
+        g2_taus: &[G2],
     ) -> bool {
         if proof.len() != opening_values.len() {
             panic!("num of quotients in proof not equal to num of opening values");
@@ -417,10 +417,10 @@ mod test {
 
         let is_verified = KZG::verify(
             commitment,
-            opened_value,
-            proof,
+            &opened_value,
+            &proof,
             opening_values,
-            kzg_instance.g2_taus,
+            &kzg_instance.g2_taus,
         );
 
         assert_eq!(is_verified, true);
@@ -449,10 +449,10 @@ mod test {
 
         let is_verified = KZG::verify(
             commitment,
-            opened_value,
-            invalid_proof,
+            &opened_value,
+            &invalid_proof,
             opening_values,
-            kzg_instance.g2_taus,
+            &kzg_instance.g2_taus,
         );
 
         assert_eq!(is_verified, false);
