@@ -167,11 +167,10 @@ fn get_round_partial_polynomial_proof_gkr<F: PrimeField>(
     let degree = composed_poly.get_degree();
 
     let points = (0..=degree)
-        .enumerate()
-        .map(|(index, i)| {
+        .map(|i| {
             let partial_poly = composed_poly.partial_evaluate(&F::from(i as u64));
 
-            (F::from(index as u64), partial_poly.reduce().iter().sum())
+            (F::from(i as u64), partial_poly.reduce().iter().sum())
         })
         .collect();
 

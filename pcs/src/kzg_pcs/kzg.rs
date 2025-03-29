@@ -5,15 +5,11 @@ use multilinear_polynomial::multilinear_polynomial_evaluation::{MultilinearPoly,
 
 type Proof = Vec<G1>;
 
+#[derive(Debug, Clone)]
 pub struct KZG {
     g1_lagrange_basis: Vec<G1>,
-    g2_taus: Vec<G2>,
+    pub g2_taus: Vec<G2>,
 }
-
-// let g2_taus: Vec<G2> = taus
-// .iter()
-// .map(|tau| g_2.mul_bigint(tau.into_bigint()))
-// .collect();
 
 impl KZG {
     pub fn new<F: PrimeField>(polynomial: &MultilinearPoly<F>, taus: Vec<F>) -> Self {

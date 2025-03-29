@@ -1,8 +1,10 @@
 use crate::gkr_circuit::{Circuit, Layer};
 
+use ark_bls12_381::G1Projective as G1;
 use ark_ff::PrimeField;
-
+use ark_std::rand::{rngs::StdRng, SeedableRng};
 use fiat_shamir::fiat_shamir_transcript::{fq_vec_to_bytes, Transcript};
+use kzg_pcs::kzg_pcs::kzg::KZG;
 use multilinear_polynomial::{
     composed_polynomial::{ProductPoly, SumPoly},
     multilinear_polynomial_evaluation::{MultilinearPoly, Operation},
@@ -10,14 +12,23 @@ use multilinear_polynomial::{
 use sum_check::sum_check_protocol::{gkr_prove, gkr_verify};
 use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
+#[derive(Debug, Clone)]
+struct KzgProof<F: PrimeField> {
+    kzg_setup: KZG,
+    commitment: G1,
+    proof: [Vec<G1>; 2],
+    opened_evals: [F; 2],
+}
+
 #[derive(Debug)]
-pub struct Proof<F: PrimeField> {
+pub struct GkrProof<F: PrimeField> {
     output_poly: MultilinearPoly<F>,
     proof_polynomials: Vec<Vec<UnivariatePoly<F>>>,
     claimed_evaluations: Vec<(F, F)>,
+    input_proof: KzgProof<F>,
 }
 
-pub fn prove<F: PrimeField>(circuit: &mut Circuit<F>, inputs: &[F]) -> Proof<F> {
+pub fn prove<F: PrimeField>(circuit: &mut Circuit<F>, inputs: &[F]) -> GkrProof<F> {
     let mut transcript = Transcript::<F>::new();
     let mut circuit_evaluations = circuit.evaluate(inputs);
     let mut w_0 = circuit_evaluations.last().unwrap().to_vec();
@@ -57,16 +68,16 @@ pub fn prove<F: PrimeField>(circuit: &mut Circuit<F>, inputs: &[F]) -> Proof<F> 
         let sum_check_proof = gkr_prove(claimed_sum, &fbc_poly, &mut transcript);
         proof_polys.push(sum_check_proof.proof_polynomials);
 
+        let next_poly = MultilinearPoly::new(w_i);
+        let mid = sum_check_proof.random_challenges.len() / 2;
+        let (r_b, r_c) = sum_check_proof.random_challenges.split_at(mid);
+
+        let o_1 = next_poly.evaluate(r_b.to_vec());
+        let o_2 = next_poly.evaluate(r_c.to_vec());
+        current_rb = r_b.to_vec();
+        current_rc = r_c.to_vec();
+
         if idx < num_layers - 1 {
-            let next_poly = MultilinearPoly::new(w_i);
-            let mid = sum_check_proof.random_challenges.len() / 2;
-            let (r_b, r_c) = sum_check_proof.random_challenges.split_at(mid);
-
-            let o_1 = next_poly.evaluate(r_b.to_vec());
-            let o_2 = next_poly.evaluate(r_c.to_vec());
-            current_rb = r_b.to_vec();
-            current_rc = r_c.to_vec();
-
             transcript.append(&fq_vec_to_bytes(&[o_1]));
             alpha = transcript.get_random_challenge();
 
@@ -78,14 +89,52 @@ pub fn prove<F: PrimeField>(circuit: &mut Circuit<F>, inputs: &[F]) -> Proof<F> 
         }
     }
 
-    Proof {
+    let input_poly = MultilinearPoly::new(inputs.to_vec());
+
+    let mut taus: Vec<F> = Vec::with_capacity(input_poly.num_of_vars);
+    let mut rng = StdRng::from_entropy();
+
+    for _ in 0..input_poly.num_of_vars {
+        let tau = F::rand(&mut rng);
+
+        taus.push(tau);
+    }
+
+    let kzg_instance = KZG::new(&input_poly, taus);
+    let commitment = kzg_instance.commit(&input_poly);
+
+    let w_b_eval = kzg_instance.open(&current_rb, &input_poly);
+
+    let w_b_proof = kzg_instance.get_proof(w_b_eval, &current_rb, &input_poly);
+
+    let w_c_eval = kzg_instance.open(&current_rc, &input_poly);
+    let w_c_proof = kzg_instance.get_proof(w_c_eval, &current_rc, &input_poly);
+
+    let input_proof = KzgProof {
+        kzg_setup: kzg_instance.clone(),
+        commitment,
+        proof: [w_b_proof.clone(), w_c_proof],
+        opened_evals: [w_b_eval, w_c_eval],
+    };
+
+    //* */
+    let wb_verified = KZG::verify(
+        commitment,
+        w_b_eval,
+        w_b_proof,
+        &current_rb,
+        kzg_instance.g2_taus,
+    );
+
+    GkrProof {
         output_poly,
         proof_polynomials: proof_polys,
         claimed_evaluations,
+        input_proof,
     }
 }
 
-pub fn verify<F: PrimeField>(proof: Proof<F>, mut circuit: Circuit<F>, inputs: &[F]) -> bool {
+pub fn verify<F: PrimeField>(proof: GkrProof<F>, mut circuit: Circuit<F>) -> bool {
     let mut transcript = Transcript::<F>::new();
 
     let (mut current_claim, init_random_challenge) =
@@ -111,10 +160,41 @@ pub fn verify<F: PrimeField>(proof: Proof<F>, mut circuit: Circuit<F>, inputs: &
 
         let current_random_challenge = sum_check_verify.random_challenges;
 
-        let (o_1, o_2) = if i == num_layers - 1 {
-            evaluate_input_poly(inputs, &current_random_challenge)
+        let o_1;
+        let o_2;
+
+        if i == num_layers - 1 {
+            let (r_b, r_c) = current_random_challenge.split_at(current_random_challenge.len() / 2);
+
+            let kzg = proof.input_proof.clone();
+
+            let wb_verified = KZG::verify(
+                kzg.commitment,
+                kzg.opened_evals[0],
+                kzg.proof[0].clone(),
+                r_b,
+                kzg.kzg_setup.g2_taus.clone(),
+            );
+
+            let wc_verified = KZG::verify(
+                kzg.commitment,
+                kzg.opened_evals[1],
+                kzg.proof[1].clone(),
+                r_c,
+                kzg.kzg_setup.g2_taus,
+            );
+
+            if !wb_verified || !wc_verified {
+                return false;
+            }
+
+            o_1 = kzg.opened_evals[0];
+            o_2 = kzg.opened_evals[1];
         } else {
-            proof.claimed_evaluations[i]
+            let (wb, wc) = proof.claimed_evaluations[i];
+
+            o_1 = wb;
+            o_2 = wc;
         };
 
         let expected_claim = if i == 0 {
@@ -269,30 +349,24 @@ fn get_folded_verifier_claim<F: PrimeField>(
     (a_r * (o_1 + o_2)) + (m_r * (o_1 * o_2))
 }
 
-fn evaluate_input_poly<F: PrimeField>(inputs: &[F], sumcheck_random_challenges: &[F]) -> (F, F) {
-    let input_poly = MultilinearPoly::new(inputs.to_vec());
-
-    let (r_b, r_c) = sumcheck_random_challenges.split_at(sumcheck_random_challenges.len() / 2);
-
-    let o_1 = input_poly.evaluate(r_b.to_vec());
-    let o_2 = input_poly.evaluate(r_c.to_vec());
-
-    (o_1, o_2)
-}
-
 #[cfg(test)]
 mod test {
-    use super::{get_fbc_poly, get_folded_fbc_poly, prove, verify, Proof};
-    use crate::gkr_circuit::{Circuit, Gate, Layer};
-    // use ark_bn254::Fq;
+    use super::{get_fbc_poly, prove, verify, GkrProof};
+    use crate::{
+        gkr_circuit::{Circuit, Gate, Layer},
+        gkr_protocol::KzgProof,
+    };
+    use ark_bls12_381::G1Projective as G1;
+    use ark_ec::PrimeGroup;
     use field_tracker::{print_summary, Ft};
+    use kzg_pcs::kzg_pcs::kzg::KZG;
     use multilinear_polynomial::{
         composed_polynomial::{ProductPoly, SumPoly},
         multilinear_polynomial_evaluation::{MultilinearPoly, Operation},
     };
     use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
-    type Fq = Ft!(ark_bn254::Fq);
+    type Fq = Ft!(ark_bls12_381::Fr);
 
     #[test]
     fn it_add_polys_correctly() {
@@ -433,7 +507,7 @@ mod test {
 
         let proof = prove(&mut circuit, &inputs);
 
-        let is_verified = verify(proof, circuit, &inputs);
+        let is_verified = verify(proof, circuit);
 
         assert_eq!(is_verified, true);
 
@@ -444,8 +518,6 @@ mod test {
     fn test_verify_invalid_proof() {
         let circuit_structure: Vec<Vec<Operation>> =
             vec![vec![Operation::Mul, Operation::Mul], vec![Operation::Add]];
-
-        let inputs: Vec<Fq> = vec![Fq::from(1), Fq::from(2), Fq::from(3), Fq::from(4)];
 
         let circuit = Circuit::new(circuit_structure);
 
@@ -474,7 +546,19 @@ mod test {
             (Fq::from(1), Fq::from(5)),
         ]);
 
-        let invalid_proof = Proof {
+        let kzg_instance = KZG::new(
+            &MultilinearPoly::new(vec![Fq::from(1), Fq::from(1)]),
+            vec![Fq::from(1)],
+        );
+
+        let input_proof = KzgProof {
+            kzg_setup: kzg_instance,
+            commitment: G1::generator(),
+            proof: [vec![G1::generator()], vec![G1::generator()]],
+            opened_evals: [Fq::from(1), Fq::from(2)],
+        };
+
+        let invalid_proof = GkrProof {
             output_poly: MultilinearPoly::new(vec![Fq::from(10), Fq::from(0)]),
             proof_polynomials: vec![
                 vec![dummy_proof_poly_1, dummy_proof_poly_2],
@@ -486,9 +570,10 @@ mod test {
                 ],
             ],
             claimed_evaluations: vec![(Fq::from(10), Fq::from(5))],
+            input_proof,
         };
 
-        let is_verified = verify(invalid_proof, circuit, &inputs);
+        let is_verified = verify(invalid_proof, circuit);
 
         assert_eq!(is_verified, false);
     }
