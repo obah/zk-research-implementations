@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use ark_bls12_381::{Bls12_381, G1Projective as G1, G2Projective as G2};
 use ark_ec::{pairing::Pairing, PrimeGroup};
 use ark_ff::PrimeField;
@@ -6,13 +8,14 @@ use multilinear_polynomial::multilinear_polynomial_evaluation::{MultilinearPoly,
 type Proof = Vec<G1>;
 
 #[derive(Debug)]
-pub struct KZG {
+pub struct KZG<F: PrimeField> {
     g1_lagrange_basis: Vec<G1>,
     pub g2_taus: Vec<G2>,
+    _field: PhantomData<F>,
 }
 
-impl KZG {
-    pub fn new<F: PrimeField>(polynomial: &MultilinearPoly<F>, taus: Vec<F>) -> Self {
+impl<F: PrimeField> KZG<F> {
+    pub fn new(polynomial: &MultilinearPoly<F>, taus: Vec<F>) -> Self {
         if taus.len() != polynomial.num_of_vars {
             panic!("invalid taus or polynomials");
         }
@@ -25,10 +28,11 @@ impl KZG {
         Self {
             g1_lagrange_basis,
             g2_taus,
+            _field: PhantomData,
         }
     }
 
-    fn run_trusted_setup<F: PrimeField>(
+    fn run_trusted_setup(
         poly: &MultilinearPoly<F>,
         g_1: G1,
         g_2: G2,
@@ -44,15 +48,15 @@ impl KZG {
         (lagrange_basis, g2_taus)
     }
 
-    pub fn commit<F: PrimeField>(&self, poly: &MultilinearPoly<F>) -> G1 {
+    pub fn commit(&self, poly: &MultilinearPoly<F>) -> G1 {
         evaluate_poly_with_l_basis_in_g1(&poly.evaluation, &self.g1_lagrange_basis)
     }
 
-    pub fn open<F: PrimeField>(&self, opening_values: &[F], poly: &MultilinearPoly<F>) -> F {
+    pub fn open(&self, opening_values: &[F], poly: &MultilinearPoly<F>) -> F {
         poly.evaluate(opening_values.to_vec())
     }
 
-    pub fn get_proof<F: PrimeField>(
+    pub fn get_proof(
         &self,
         opened_value: F,
         opening_values: &[F],
@@ -90,7 +94,7 @@ impl KZG {
         q_i
     }
 
-    pub fn verify<F: PrimeField>(
+    pub fn verify(
         commitment: G1,
         opened_value: &F,
         proof: &Proof,
