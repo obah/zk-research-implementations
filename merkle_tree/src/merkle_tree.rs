@@ -10,7 +10,7 @@ use sha3::{Digest, Keccak256};
 //hash
 
 #[derive(PartialEq)]
-enum DataSide {
+enum LeafSide {
     Left,
     Right,
 }
@@ -57,6 +57,8 @@ impl<F: PrimeField> Leaf<F> {
 
 impl<F: PrimeField> Node<F> {
     fn new(left_leaf: Leaf<F>, right_leaf: Leaf<F>) -> Self {
+        assert_ne!(left_leaf.leaf_id, right_leaf.leaf_id, "invalid leaves");
+
         let mut hasher = Keccak256::new();
 
         hasher.update(fq_vec_to_bytes(&[left_leaf.data_hash]));
@@ -75,10 +77,10 @@ impl<F: PrimeField> Node<F> {
         }
     }
 
-    fn update(&mut self, data_side: DataSide, data: F) -> F {
+    fn update(&mut self, data_side: LeafSide, data: F) -> F {
         assert_eq!(self.left_leaf.leaf_id.len(), 1, "Can't update this node");
 
-        let leaf_id_to_update = if data_side == DataSide::Left {
+        let leaf_id_to_update = if data_side == LeafSide::Left {
             &self.left_leaf.leaf_id
         } else {
             &self.right_leaf.leaf_id
@@ -86,7 +88,7 @@ impl<F: PrimeField> Node<F> {
 
         let new_leaf = Leaf::new(data, &leaf_id_to_update, false);
 
-        if data_side == DataSide::Left {
+        if data_side == LeafSide::Left {
             self.left_leaf = new_leaf;
         } else {
             self.right_leaf = new_leaf;
@@ -104,7 +106,7 @@ impl<F: PrimeField> Node<F> {
         self.output_leaf.data_hash
     }
 
-    fn delete(&mut self, data_side: DataSide) {
+    fn delete(&mut self, data_side: LeafSide) {
         self.update(data_side, F::zero());
     }
 }
@@ -132,5 +134,70 @@ impl<F: PrimeField> MerkleTree<F> {
 
     fn recompute_root_hash() {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ark_bn254::Fq;
+
+    use super::*;
+
+    #[test]
+    fn test_creates_new_leaf() {
+        let data = Fq::from(100);
+        let leaf = Leaf::new(data, &[1], false);
+
+        assert_eq!(leaf.leaf_id, &[1]);
+    }
+
+    #[test]
+    fn test_creates_new_node() {
+        let data = Fq::from(100);
+
+        let leaf_1 = Leaf::new(data, &[1], false);
+        let leaf_2 = Leaf::new(data, &[2], false);
+
+        let node = Node::new(leaf_1, leaf_2);
+
+        assert_eq!(node.output_leaf.leaf_id, &[1, 2]);
+    }
+
+    #[test]
+    fn test_update_node() {
+        let data = Fq::from(100);
+        let leaf_1 = Leaf::new(data, &[1], false);
+        let leaf_2 = Leaf::new(data, &[2], false);
+        let mut node = Node::new(leaf_1, leaf_2);
+
+        let initial_leaf_hash = node.left_leaf.data_hash;
+        let initial_right_hash = node.right_leaf.data_hash;
+        let initial_output_hash = node.output_leaf.data_hash;
+
+        let new_data = Fq::from(200);
+        node.update(LeafSide::Left, new_data);
+
+        assert_ne!(initial_output_hash, node.output_leaf.data_hash);
+        assert_ne!(initial_leaf_hash, node.left_leaf.data_hash);
+        assert_eq!(initial_right_hash, node.right_leaf.data_hash);
+
+        assert_eq!(node.output_leaf.leaf_id, &[1, 2]);
+        assert_eq!(node.left_leaf.leaf_id, &[1]);
+    }
+
+    #[test]
+    fn test_delete_leaf() {
+        let data = Fq::from(100);
+        let leaf_1 = Leaf::new(data, &[1], false);
+        let leaf_2 = Leaf::new(data, &[2], false);
+        let mut node = Node::new(leaf_1, leaf_2);
+        let initial_right_hash = node.right_leaf.data_hash;
+        let initial_output_hash = node.output_leaf.data_hash;
+
+        node.delete(LeafSide::Right);
+
+        assert_eq!(node.right_leaf.leaf_id, &[2]);
+        assert_ne!(initial_output_hash, node.output_leaf.data_hash);
+        assert_ne!(initial_right_hash, node.right_leaf.data_hash);
     }
 }
