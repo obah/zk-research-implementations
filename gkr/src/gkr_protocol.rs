@@ -14,7 +14,7 @@ use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
 #[derive(Debug)]
 struct KzgProof<F: PrimeField> {
-    kzg_setup: KZG,
+    kzg_setup: KZG<F>,
     commitment: G1,
     proof: [Vec<G1>; 2],
     opened_evals: [F; 2],
