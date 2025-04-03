@@ -8,10 +8,7 @@ enum LeafSide {
     Right,
 }
 
-struct LeafPath {
-    affected_path: Vec<Vec<usize>>,
-    unaffected_path: Vec<Vec<usize>>,
-}
+struct LeafPath(Vec<Vec<usize>>);
 
 #[derive(Clone, Debug)]
 struct Leaf<F: PrimeField> {
@@ -219,7 +216,7 @@ impl<F: PrimeField> MerkleTree<F> {
             panic!("Data with given id not found");
         }
 
-        let selected_node = selected_node.unwrap();
+        let mut selected_node = selected_node.unwrap();
 
         let selected_leaf;
         let proof_leaf;
@@ -253,19 +250,36 @@ impl<F: PrimeField> MerkleTree<F> {
 
         proofs.push(first_proof);
 
-        let unaffected_path = self.get_leaf_path(data_id).unaffected_path;
+        let mut current_side = selected_node.data_side;
+        for idx in 0..(self.depth - 1) {
+            let parent_node = self.tree[idx + 1]
+                .iter()
+                .find(|node| {
+                    node.left_leaf.leaf_id == selected_node.output_leaf.leaf_id
+                        || node.right_leaf.leaf_id == selected_node.output_leaf.leaf_id
+                })
+                .unwrap();
 
-        for (idx, nodes) in self.tree.iter().enumerate() {
-            for node in nodes {
-                if node.output_leaf.leaf_id == unaffected_path[idx] {
-                    let proof = ProofData {
-                        data_hash: node.output_leaf.data_hash,
-                        data_side: node.data_side,
-                    };
+            let data_side;
+            let proof_hash;
 
-                    proofs.push(proof);
-                }
+            if current_side == LeafSide::Left {
+                proof_hash = parent_node.right_leaf.data_hash;
+                data_side = LeafSide::Right;
+            } else {
+                proof_hash = parent_node.left_leaf.data_hash;
+                data_side = LeafSide::Left;
             }
+
+            let proof = ProofData {
+                data_hash: proof_hash,
+                data_side,
+            };
+
+            proofs.push(proof);
+
+            current_side = parent_node.data_side;
+            selected_node = parent_node;
         }
 
         MerkleProof {
@@ -323,24 +337,15 @@ impl<F: PrimeField> MerkleTree<F> {
             .cloned()
             .collect();
 
-        let unaffected_path = all_ids
-            .into_iter()
-            .flatten()
-            .filter(|id| !id.contains(&leaf_id))
-            .collect();
-
-        LeafPath {
-            affected_path,
-            unaffected_path,
-        }
+        LeafPath(affected_path)
     }
 
     fn recompute_root_hash(&mut self, mut affected_leaf_id: usize) {
         assert!(affected_leaf_id < 1 << self.depth, "Invalid leaf id");
 
-        let affected_leaf_path = self.get_leaf_path(affected_leaf_id).affected_path;
+        let affected_leaf_path = self.get_leaf_path(affected_leaf_id);
 
-        for (index, id) in affected_leaf_path.iter().enumerate() {
+        for (index, id) in affected_leaf_path.0.iter().enumerate() {
             let mut affected_node: Node<F> = self.tree[index]
                 .iter()
                 .find(|node| node.output_leaf.leaf_id == *id)
@@ -485,10 +490,8 @@ mod test {
         let leaf_path = merkle_tree.get_leaf_path(0);
 
         let expected_affected_path = vec![vec![0, 1], vec![0, 1, 2, 3]];
-        let expected_unaffected_path = vec![vec![2, 3]];
 
-        assert_eq!(leaf_path.affected_path, expected_affected_path);
-        assert_eq!(leaf_path.unaffected_path, expected_unaffected_path);
+        assert_eq!(leaf_path.0, expected_affected_path);
     }
 
     #[test]
@@ -551,7 +554,6 @@ mod test {
         assert_eq!(expected_root_hash, merkle_tree.get_root_hash());
     }
 
-    ////! failinggggg
     #[test]
     fn test_update_leaf() {
         let depth = 2;
@@ -564,7 +566,7 @@ mod test {
         hasher.update(fq_vec_to_bytes(&[new_data]));
         let new_data_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
 
-        assert_eq!(new_data_hash, merkle_tree.tree[0][1].left_leaf.data_hash);
+        assert_eq!(new_data_hash, merkle_tree.tree[0][0].right_leaf.data_hash);
 
         hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
         hasher.update(fq_vec_to_bytes(&[new_data_hash]));
@@ -581,10 +583,9 @@ mod test {
         assert_eq!(expected_root_hash, merkle_tree.get_root_hash());
     }
 
-    ////! failinggggg
     #[test]
     fn test_proof_and_verify() {
-        let depth = 2;
+        let depth = 3;
         let mut merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
 
         let new_data = Fq::from(10);
