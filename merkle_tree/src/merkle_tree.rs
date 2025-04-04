@@ -1,35 +1,12 @@
 use ark_ff::PrimeField;
 use fiat_shamir::fiat_shamir_transcript::fq_vec_to_bytes;
 use sha3::{Digest, Keccak256};
+use std::error::Error;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 enum LeafSide {
     Left,
     Right,
-}
-
-struct LeafPath(Vec<Vec<usize>>);
-
-#[derive(Clone, Debug)]
-struct Leaf<F: PrimeField> {
-    data_hash: F,
-    leaf_id: Vec<usize>,
-}
-
-#[derive(Clone, Debug)]
-struct Node<F: PrimeField> {
-    left_leaf: Leaf<F>,
-    right_leaf: Leaf<F>,
-    output_leaf: Leaf<F>,
-    node_id: usize,
-    data_side: LeafSide,
-}
-
-#[derive(Debug)]
-struct MerkleTree<F: PrimeField> {
-    tree: Vec<Vec<Node<F>>>,
-    depth: usize,
-    next_leaf_id: usize,
 }
 
 #[derive(Clone)]
@@ -44,555 +21,254 @@ struct MerkleProof<F: PrimeField> {
     proof: Vec<ProofData<F>>,
 }
 
-impl<F: PrimeField> Leaf<F> {
-    fn new(data: F, id: &[usize], is_hash: bool) -> Self {
-        let leaf;
-
-        if is_hash {
-            leaf = Self {
-                data_hash: data,
-                leaf_id: id.to_vec(),
-            }
-        } else {
-            let mut hasher = Keccak256::new();
-            hasher.update(fq_vec_to_bytes(&[data]));
-            let data_hash = F::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-            leaf = Self {
-                data_hash,
-                leaf_id: id.to_vec(),
-            }
-        }
-
-        leaf
-    }
-}
-
-impl<F: PrimeField> Node<F> {
-    fn new(left_leaf: Leaf<F>, right_leaf: Leaf<F>, node_id: usize, data_side: LeafSide) -> Self {
-        assert_ne!(left_leaf.leaf_id, right_leaf.leaf_id, "invalid leaves");
-
-        let mut hasher = Keccak256::new();
-
-        hasher.update(fq_vec_to_bytes(&[left_leaf.data_hash]));
-        hasher.update(fq_vec_to_bytes(&[right_leaf.data_hash]));
-        let output_hash = F::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        let mut new_id = left_leaf.leaf_id.clone();
-        new_id.extend(&right_leaf.leaf_id);
-
-        let output_leaf = Leaf::new(output_hash, &new_id, true);
-
-        Self {
-            left_leaf,
-            right_leaf,
-            output_leaf,
-            node_id,
-            data_side,
-        }
-    }
-
-    fn update(&mut self, data_side: LeafSide, data: F, is_hash: bool) -> F {
-        let leaf_id_to_update = if data_side == LeafSide::Left {
-            &self.left_leaf.leaf_id
-        } else {
-            &self.right_leaf.leaf_id
-        };
-
-        let new_leaf = Leaf::new(data, &leaf_id_to_update, is_hash);
-
-        if data_side == LeafSide::Left {
-            self.left_leaf = new_leaf;
-        } else {
-            self.right_leaf = new_leaf;
-        }
-
-        let mut hasher = Keccak256::new();
-        hasher.update(fq_vec_to_bytes(&[self.left_leaf.data_hash]));
-        hasher.update(fq_vec_to_bytes(&[self.right_leaf.data_hash]));
-        let new_output_hash = F::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        let new_output_leaf = Leaf::new(new_output_hash, &self.output_leaf.leaf_id, true);
-
-        self.output_leaf = new_output_leaf;
-
-        self.output_leaf.data_hash
-    }
-
-    fn delete(&mut self, data_side: LeafSide) {
-        self.update(data_side, F::zero(), true);
-    }
+#[derive(Debug)]
+struct MerkleTree<F: PrimeField> {
+    leaves: Vec<F>,
+    tree: Vec<Vec<F>>,
+    depth: usize,
 }
 
 impl<F: PrimeField> MerkleTree<F> {
-    fn new(depth: usize) -> Self {
-        let num_of_leaves = 1 << depth;
-
-        let mut tree: Vec<Vec<Node<F>>> = Vec::with_capacity(depth);
-
-        let mut leaves: Vec<Leaf<F>> = (0..num_of_leaves)
-            .map(|index| Leaf::new(F::zero(), &[index], true))
-            .collect();
+    pub fn new(depth: usize) -> Self {
+        let num_leaves = 1 << depth;
+        let leaves = vec![F::zero(); num_leaves];
+        let mut tree = Vec::with_capacity(depth);
+        let mut current_level = leaves.clone();
 
         for _ in 0..depth {
-            let mut nodes = Vec::new();
-
-            for (idx, pair) in leaves.chunks(2).enumerate() {
-                let data_side = if idx % 2 == 1 {
-                    LeafSide::Right
-                } else {
-                    LeafSide::Left
-                };
-
-                let node = Node::new(pair[0].clone(), pair[1].clone(), idx, data_side);
-                nodes.push(node);
-            }
-
-            tree.push(nodes.clone());
-            leaves = nodes.iter().map(|node| node.output_leaf.clone()).collect();
+            let next_level = current_level
+                .chunks(2)
+                .map(|pair| Self::hash_pair(pair[0], pair[1]))
+                .collect::<Vec<_>>();
+            tree.push(next_level.clone());
+            current_level = next_level;
         }
 
         Self {
+            leaves,
             tree,
             depth,
-            next_leaf_id: 0,
         }
     }
 
-    fn insert_leaf(&mut self, data: F, is_hash: bool) {
-        let id = self.next_leaf_id;
-
-        if id == 1 << self.depth {
-            panic!("All leaves are filled!");
+    pub fn update_leaf(
+        &mut self,
+        leaf_id: usize,
+        data: F,
+        is_hash: bool,
+    ) -> Result<(), Box<dyn Error>> {
+        if leaf_id >= 1 << self.depth {
+            return Err("Invalid leaf ID".into());
         }
 
-        let new_leaf = Leaf::new(data, &[id], is_hash);
-
-        self.tree[0].iter_mut().for_each(|node| {
-            if node.left_leaf.leaf_id[0] == id {
-                node.left_leaf = new_leaf.clone();
-                return;
-            } else if node.right_leaf.leaf_id[0] == id {
-                node.right_leaf = new_leaf.clone();
-                return;
-            }
-        });
-
-        self.next_leaf_id += 1;
-
-        self.recompute_root_hash(id);
-    }
-
-    fn update_leaf(&mut self, data: F, leaf_id: usize, is_hash: bool) {
-        assert!(leaf_id < 1 << self.depth, "Invalid leaf id");
-
-        let new_leaf = Leaf::new(data, &[leaf_id], is_hash);
-
-        self.tree[0].iter_mut().for_each(|node| {
-            if node.left_leaf.leaf_id[0] == leaf_id {
-                node.left_leaf = new_leaf.clone();
-                return;
-            } else if node.right_leaf.leaf_id[0] == leaf_id {
-                node.right_leaf = new_leaf.clone();
-                return;
-            }
-        });
-
-        self.recompute_root_hash(leaf_id);
-    }
-
-    fn get_root_hash(&self) -> F {
-        let last_node = self.depth - 1;
-
-        self.tree[last_node][0].output_leaf.data_hash
-    }
-
-    fn create_proof(&self, data_to_prove: F, data_id: usize) -> MerkleProof<F> {
-        let selected_node = self.tree[0].iter().find(|node| {
-            node.left_leaf.leaf_id[0] == data_id || node.right_leaf.leaf_id[0] == data_id
-        });
-
-        if selected_node.is_none() {
-            panic!("Data with given id not found");
-        }
-
-        let mut selected_node = selected_node.unwrap();
-
-        let selected_leaf;
-        let proof_leaf;
-        let proof_side;
-
-        if selected_node.left_leaf.leaf_id[0] == data_id {
-            selected_leaf = selected_node.left_leaf.clone();
-            proof_leaf = selected_node.right_leaf.clone();
-            proof_side = LeafSide::Right;
+        let new_hash = if is_hash {
+            data
         } else {
-            selected_leaf = selected_node.right_leaf.clone();
-            proof_leaf = selected_node.left_leaf.clone();
-            proof_side = LeafSide::Left;
-        }
-
-        let mut hasher = Keccak256::new();
-        hasher.update(fq_vec_to_bytes(&[data_to_prove]));
-        let data_to_prove_hash = F::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        assert_eq!(
-            selected_leaf.data_hash, data_to_prove_hash,
-            "invalid leaf data"
-        );
-
-        let mut proofs: Vec<ProofData<F>> = Vec::with_capacity(self.depth + 1);
-
-        let first_proof = ProofData {
-            data_hash: proof_leaf.data_hash,
-            data_side: proof_side,
+            Self::compute_hash(data)
         };
 
-        proofs.push(first_proof);
+        self.leaves[leaf_id] = new_hash;
+        self.recompute_path(leaf_id);
 
-        let mut current_side = selected_node.data_side;
-        for idx in 0..(self.depth - 1) {
-            let parent_node = self.tree[idx + 1]
-                .iter()
-                .find(|node| {
-                    node.left_leaf.leaf_id == selected_node.output_leaf.leaf_id
-                        || node.right_leaf.leaf_id == selected_node.output_leaf.leaf_id
-                })
-                .unwrap();
+        Ok(())
+    }
 
-            let data_side;
-            let proof_hash;
+    fn recompute_path(&mut self, leaf_id: usize) {
+        let mut current_hash = self.leaves[leaf_id];
+        let mut index = leaf_id;
 
-            if current_side == LeafSide::Left {
-                proof_hash = parent_node.right_leaf.data_hash;
-                data_side = LeafSide::Right;
+        for level in 0..self.depth {
+            let sibling_index = index ^ 1;
+
+            let sibling_hash = if level == 0 {
+                self.leaves[sibling_index]
             } else {
-                proof_hash = parent_node.left_leaf.data_hash;
-                data_side = LeafSide::Left;
-            }
-
-            let proof = ProofData {
-                data_hash: proof_hash,
-                data_side,
+                self.tree[level - 1][sibling_index]
             };
 
-            proofs.push(proof);
-
-            current_side = parent_node.data_side;
-            selected_node = parent_node;
-        }
-
-        MerkleProof {
-            data: data_to_prove,
-            proof: proofs,
-        }
-    }
-
-    fn verify(&self, proof: MerkleProof<F>) -> bool {
-        let root_hash = self.get_root_hash();
-
-        let mut hasher = Keccak256::new();
-
-        hasher.update(fq_vec_to_bytes(&[proof.data]));
-        let data_to_prove_hash = F::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        let mut current_hash = data_to_prove_hash;
-        let mut verified = false;
-
-        for proof_data in proof.proof {
-            if proof_data.data_side == LeafSide::Left {
-                hasher.update(fq_vec_to_bytes(&[proof_data.data_hash]));
-                hasher.update(fq_vec_to_bytes(&[current_hash]));
+            let (left, right) = if index % 2 == 0 {
+                (current_hash, sibling_hash)
             } else {
-                hasher.update(fq_vec_to_bytes(&[current_hash]));
-                hasher.update(fq_vec_to_bytes(&[proof_data.data_hash]));
-            }
+                (sibling_hash, current_hash)
+            };
 
-            current_hash = F::from_le_bytes_mod_order(&hasher.finalize_reset());
+            current_hash = Self::hash_pair(left, right);
+
+            let parent_index = index / 2;
+
+            self.tree[level][parent_index] = current_hash;
+            index = parent_index;
         }
-
-        if root_hash == current_hash {
-            verified = true;
-        }
-
-        verified
     }
 
-    fn get_leaf_path(&self, leaf_id: usize) -> LeafPath {
-        let all_ids: Vec<Vec<Vec<usize>>> = self
-            .tree
-            .iter()
-            .map(|layer| {
-                layer
-                    .iter()
-                    .map(|node| node.output_leaf.leaf_id.clone())
-                    .collect()
-            })
-            .collect();
-
-        let affected_path = all_ids
-            .iter()
-            .flatten()
-            .filter(|id| id.contains(&leaf_id))
-            .cloned()
-            .collect();
-
-        LeafPath(affected_path)
+    pub fn get_root_hash(&self) -> F {
+        self.tree[self.depth - 1][0]
     }
 
-    fn recompute_root_hash(&mut self, mut affected_leaf_id: usize) {
-        assert!(affected_leaf_id < 1 << self.depth, "Invalid leaf id");
+    pub fn create_proof(
+        &self,
+        data_to_prove: F,
+        leaf_id: usize,
+    ) -> Result<MerkleProof<F>, Box<dyn Error>> {
+        if leaf_id >= 1 << self.depth {
+            return Err("Invalid leaf ID".into());
+        }
 
-        let affected_leaf_path = self.get_leaf_path(affected_leaf_id);
+        let data_hash = Self::compute_hash(data_to_prove);
 
-        for (index, id) in affected_leaf_path.0.iter().enumerate() {
-            let mut affected_node: Node<F> = self.tree[index]
-                .iter()
-                .find(|node| node.output_leaf.leaf_id == *id)
-                .unwrap()
-                .clone();
+        if self.leaves[leaf_id] != data_hash {
+            return Err("Data does not match the leaf hash".into());
+        }
 
-            let data_side;
-            let affected_data;
+        let mut proof = Vec::with_capacity(self.depth);
+        let mut index = leaf_id;
 
-            if affected_leaf_id % 2 == 1 {
-                data_side = LeafSide::Right;
-                affected_data = affected_node.right_leaf.data_hash;
+        for level in 0..self.depth {
+            let sibling_index = index ^ 1;
+
+            let sibling_hash = if level == 0 {
+                self.leaves[sibling_index]
             } else {
-                data_side = LeafSide::Left;
-                affected_data = affected_node.left_leaf.data_hash;
-            }
+                self.tree[level - 1][sibling_index]
+            };
 
-            let new_hash = affected_node.update(data_side, affected_data, true);
+            let data_side = if index % 2 == 0 {
+                LeafSide::Right
+            } else {
+                LeafSide::Left
+            };
 
-            affected_leaf_id = affected_node.node_id;
-
-            self.tree[index].iter_mut().for_each(|node| {
-                if node.output_leaf.leaf_id == *id {
-                    node.output_leaf.data_hash = new_hash;
-                }
+            proof.push(ProofData {
+                data_hash: sibling_hash,
+                data_side,
             });
 
-            let next_leaf_id = affected_node.output_leaf.leaf_id;
-
-            if index < self.depth - 1 {
-                self.tree[index + 1].iter_mut().for_each(|node| {
-                    if node.left_leaf.leaf_id == next_leaf_id {
-                        node.left_leaf.data_hash = new_hash;
-                    } else {
-                        node.right_leaf.data_hash = new_hash;
-                    }
-                })
-            }
+            index /= 2;
         }
+
+        Ok(MerkleProof {
+            data: data_to_prove,
+            proof,
+        })
+    }
+
+    pub fn verify(&self, proof: MerkleProof<F>) -> bool {
+        let root_hash = self.get_root_hash();
+        let mut current_hash = Self::compute_hash(proof.data);
+
+        for proof_data in proof.proof {
+            let (left, right) = match proof_data.data_side {
+                LeafSide::Left => (proof_data.data_hash, current_hash),
+                LeafSide::Right => (current_hash, proof_data.data_hash),
+            };
+
+            current_hash = Self::hash_pair(left, right);
+        }
+
+        root_hash == current_hash
+    }
+
+    fn compute_hash(data: F) -> F {
+        let mut hasher = Keccak256::new();
+        hasher.update(fq_vec_to_bytes(&[data]));
+
+        F::from_le_bytes_mod_order(&hasher.finalize_reset())
+    }
+
+    fn hash_pair(left: F, right: F) -> F {
+        let mut hasher = Keccak256::new();
+        hasher.update(fq_vec_to_bytes(&[left]));
+        hasher.update(fq_vec_to_bytes(&[right]));
+
+        F::from_le_bytes_mod_order(&hasher.finalize_reset())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use ark_bn254::Fq;
-
     use super::*;
-
-    #[test]
-    fn test_creates_new_leaf() {
-        let data = Fq::from(100);
-        let leaf = Leaf::new(data, &[1], false);
-
-        assert_eq!(leaf.leaf_id, &[1]);
-    }
-
-    #[test]
-    fn test_creates_new_node() {
-        let data = Fq::from(100);
-
-        let leaf_1 = Leaf::new(data, &[1], false);
-        let leaf_2 = Leaf::new(data, &[2], false);
-
-        let node = Node::new(leaf_1, leaf_2, 0, LeafSide::Left);
-
-        assert_eq!(node.output_leaf.leaf_id, &[1, 2]);
-    }
-
-    #[test]
-    fn test_update_node() {
-        let data = Fq::from(100);
-        let leaf_1 = Leaf::new(data, &[1], false);
-        let leaf_2 = Leaf::new(data, &[2], false);
-        let mut node = Node::new(leaf_1, leaf_2, 0, LeafSide::Left);
-
-        let initial_leaf_hash = node.left_leaf.data_hash;
-        let initial_right_hash = node.right_leaf.data_hash;
-        let initial_output_hash = node.output_leaf.data_hash;
-
-        let new_data = Fq::from(200);
-        node.update(LeafSide::Left, new_data, false);
-
-        assert_ne!(initial_output_hash, node.output_leaf.data_hash);
-        assert_ne!(initial_leaf_hash, node.left_leaf.data_hash);
-        assert_eq!(initial_right_hash, node.right_leaf.data_hash);
-
-        assert_eq!(node.output_leaf.leaf_id, &[1, 2]);
-        assert_eq!(node.left_leaf.leaf_id, &[1]);
-    }
-
-    #[test]
-    fn test_delete_leaf() {
-        let data = Fq::from(100);
-        let leaf_1 = Leaf::new(data, &[1], false);
-        let leaf_2 = Leaf::new(data, &[2], false);
-        let mut node = Node::new(leaf_1, leaf_2, 0, LeafSide::Left);
-        let initial_right_hash = node.right_leaf.data_hash;
-        let initial_output_hash = node.output_leaf.data_hash;
-
-        node.delete(LeafSide::Right);
-
-        assert_eq!(node.right_leaf.data_hash, Fq::from(0));
-        assert_eq!(node.right_leaf.leaf_id, &[2]);
-        assert_ne!(initial_output_hash, node.output_leaf.data_hash);
-        assert_ne!(initial_right_hash, node.right_leaf.data_hash);
-    }
+    use ark_bn254::Fq;
 
     #[test]
     fn test_create_tree() {
         let depth = 2;
         let merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
-
+        assert_eq!(merkle_tree.leaves.len(), 4);
         assert_eq!(merkle_tree.tree.len(), depth);
-        assert_eq!(merkle_tree.tree[0][0].left_leaf.data_hash, Fq::from(0));
+        assert_eq!(merkle_tree.tree[0].len(), 2);
+        assert_eq!(merkle_tree.tree[1].len(), 1);
+
+        for leaf in merkle_tree.leaves.iter() {
+            assert_eq!(*leaf, Fq::from(0));
+        }
+
+        let zero_hash = Fq::from(0);
+        let hash_1 = MerkleTree::<Fq>::hash_pair(zero_hash, zero_hash);
+        let hash_2 = MerkleTree::<Fq>::hash_pair(hash_1, hash_1);
+
+        assert_eq!(merkle_tree.get_root_hash(), hash_2);
     }
 
     #[test]
     fn test_get_root_hash() {
         let depth = 2;
         let merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
-        let root_leaf = merkle_tree.tree[depth - 1][0].output_leaf.clone();
+        let zero_hash = Fq::from(0);
+        let hash_1 = MerkleTree::<Fq>::hash_pair(zero_hash, zero_hash);
+        let hash_2 = MerkleTree::<Fq>::hash_pair(hash_1, hash_1);
 
-        assert_eq!(root_leaf.leaf_id, &[0, 1, 2, 3]);
-        assert_eq!(merkle_tree.tree[depth - 1].len(), 1);
-
-        let mut hasher = Keccak256::new();
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        let hash_1 = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        hasher.update(fq_vec_to_bytes(&[hash_1]));
-        hasher.update(fq_vec_to_bytes(&[hash_1]));
-        let root_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        assert_eq!(root_hash, merkle_tree.get_root_hash());
-    }
-
-    #[test]
-    fn test_get_leaf_path() {
-        let depth = 2;
-        let merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
-        let leaf_path = merkle_tree.get_leaf_path(0);
-
-        let expected_affected_path = vec![vec![0, 1], vec![0, 1, 2, 3]];
-
-        assert_eq!(leaf_path.0, expected_affected_path);
-    }
-
-    #[test]
-    fn test_recompute_root_hash() {
-        let depth = 2;
-        let mut merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
-
-        let new_data = Fq::from(10);
-        let new_leaf = Leaf::new(new_data, &[0], false);
-
-        merkle_tree.tree[0][0].left_leaf = new_leaf;
-
-        merkle_tree.recompute_root_hash(0);
-
-        let mut hasher = Keccak256::new();
-        hasher.update(fq_vec_to_bytes(&[new_data]));
-        let new_data_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        hasher.update(fq_vec_to_bytes(&[new_data_hash]));
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        let hash_1 = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        let hash_2 = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        hasher.update(fq_vec_to_bytes(&[hash_1]));
-        hasher.update(fq_vec_to_bytes(&[hash_2]));
-        let expected_root_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        assert_eq!(expected_root_hash, merkle_tree.get_root_hash());
-    }
-
-    #[test]
-    fn test_insert_leaf() {
-        let depth = 2;
-        let mut merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
-
-        let new_data = Fq::from(10);
-        merkle_tree.insert_leaf(new_data, false);
-
-        let mut hasher = Keccak256::new();
-        hasher.update(fq_vec_to_bytes(&[new_data]));
-        let new_data_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        assert_eq!(new_data_hash, merkle_tree.tree[0][0].left_leaf.data_hash);
-
-        hasher.update(fq_vec_to_bytes(&[new_data_hash]));
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        let hash_1 = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        let hash_2 = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        hasher.update(fq_vec_to_bytes(&[hash_1]));
-        hasher.update(fq_vec_to_bytes(&[hash_2]));
-        let expected_root_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
-
-        assert_eq!(expected_root_hash, merkle_tree.get_root_hash());
+        assert_eq!(merkle_tree.get_root_hash(), hash_2);
     }
 
     #[test]
     fn test_update_leaf() {
         let depth = 2;
         let mut merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
-
         let new_data = Fq::from(10);
-        merkle_tree.update_leaf(new_data, 1, false);
 
-        let mut hasher = Keccak256::new();
-        hasher.update(fq_vec_to_bytes(&[new_data]));
-        let new_data_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
+        merkle_tree.update_leaf(1, new_data, false).unwrap();
 
-        assert_eq!(new_data_hash, merkle_tree.tree[0][0].right_leaf.data_hash);
+        let hash_new_data = MerkleTree::<Fq>::compute_hash(new_data);
 
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        hasher.update(fq_vec_to_bytes(&[new_data_hash]));
-        let hash_1 = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
+        assert_eq!(merkle_tree.leaves[1], hash_new_data);
 
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        hasher.update(fq_vec_to_bytes(&[Fq::from(0)]));
-        let hash_2 = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
+        let hash_0 = Fq::from(0);
+        let hash_2 = Fq::from(0);
+        let hash_3 = Fq::from(0);
+        let hash_01 = MerkleTree::<Fq>::hash_pair(hash_0, hash_new_data);
+        let hash_23 = MerkleTree::<Fq>::hash_pair(hash_2, hash_3);
+        let expected_root_hash = MerkleTree::<Fq>::hash_pair(hash_01, hash_23);
 
-        hasher.update(fq_vec_to_bytes(&[hash_1]));
-        hasher.update(fq_vec_to_bytes(&[hash_2]));
-        let expected_root_hash = Fq::from_le_bytes_mod_order(&hasher.finalize_reset());
+        assert_eq!(merkle_tree.get_root_hash(), expected_root_hash);
+    }
 
-        assert_eq!(expected_root_hash, merkle_tree.get_root_hash());
+    #[test]
+    fn test_delete_leaf() {
+        let depth = 2;
+        let mut merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
+        let new_data = Fq::from(10);
+
+        merkle_tree.update_leaf(0, new_data, false).unwrap();
+        merkle_tree.update_leaf(0, Fq::from(0), true).unwrap();
+
+        assert_eq!(merkle_tree.leaves[0], Fq::from(0));
+
+        let zero_hash = Fq::from(0);
+        let hash_1 = MerkleTree::<Fq>::hash_pair(zero_hash, zero_hash);
+        let hash_2 = MerkleTree::<Fq>::hash_pair(hash_1, hash_1);
+
+        assert_eq!(merkle_tree.get_root_hash(), hash_2);
     }
 
     #[test]
     fn test_proof_and_verify() {
         let depth = 3;
         let mut merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
-
         let new_data = Fq::from(10);
-        merkle_tree.insert_leaf(new_data, false);
 
-        let proof = merkle_tree.create_proof(new_data, 0);
+        merkle_tree.update_leaf(0, new_data, false).unwrap();
 
+        let proof = merkle_tree.create_proof(new_data, 0).unwrap();
         let is_verified = merkle_tree.verify(proof);
 
         assert_eq!(is_verified, true);
@@ -611,10 +287,25 @@ mod test {
 
         let invalid_proof = MerkleProof {
             data: new_data,
-            proof: vec![fake_proof_data; 2],
+            proof: vec![fake_proof_data; depth],
         };
 
         let is_verified = merkle_tree.verify(invalid_proof);
+
         assert_eq!(is_verified, false);
+    }
+
+    #[test]
+    fn test_create_proof_invalid_data() {
+        let depth = 2;
+        let mut merkle_tree: MerkleTree<Fq> = MerkleTree::new(depth);
+        let new_data = Fq::from(10);
+
+        merkle_tree.update_leaf(0, new_data, false).unwrap();
+
+        let wrong_data = Fq::from(20);
+        let result = merkle_tree.create_proof(wrong_data, 0);
+
+        assert!(result.is_err());
     }
 }
