@@ -139,19 +139,7 @@ pub fn gkr_verify<F: PrimeField>(
 
         random_challenges.push(r_c);
 
-        // let round_uni_points = round_poly
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(i, y)| {
-        //         let x = F::from(i as u64);
-
-        //         (x, *y)
-        //     })
-        //     .collect();
-
-        // let round_uni_poly = UnivariatePoly::interpolate(round_uni_points);
-
-        claimed_sum = round_poly.evaluate(r_c); //next expected sum
+        claimed_sum = round_poly.evaluate(r_c);
     }
 
     GkrVerify {
