@@ -60,21 +60,11 @@ fn fft_interpolate(evaluations: &[Fr]) -> UnivariatePoly<Fr> {
 }
 
 fn split_poly(poly: &[Fr]) -> (Vec<Fr>, Vec<Fr>) {
-    let poly_even = poly
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| index % 2 == 0)
-        .map(|(_, coeff)| *coeff)
-        .collect();
+    let poly_even = poly.iter().step_by(2).copied().collect();
 
-    let poly_odd = poly
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| index % 2 == 1)
-        .map(|(_, coeff)| *coeff)
-        .collect();
+    let poly_odd = poly.iter().skip(1).step_by(2).copied().collect();
 
-    ((poly_even), (poly_odd))
+    (poly_even, poly_odd)
 }
 
 fn get_interpolation_roots(n: usize) -> Vec<Fr> {
