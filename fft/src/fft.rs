@@ -1,74 +1,65 @@
-use ark_ff::PrimeField;
+use ark_bn254::Fr;
+use ark_ff::{FftField, Field};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
-//todo 1. look for how to get the array of roots of unity up to n
-//todo 2. adjust interpolate roots of unity either by mapping(scale) or actual halfing
-//todo 3. look for how to represent complex numbers for test
-//todo 4. fix any errors
+fn dft(values: &[Fr], root: Fr) -> Vec<Fr> {
+    let n = values.len();
 
-//takes poly in coeff form
-fn fft_evaluate<F: PrimeField>(poly: &UnivariatePoly<F>) -> Vec<F> {
+    if n == 1 {
+        return values.to_vec();
+    }
+
+    let (even, odd) = split_poly(values);
+
+    let root_sq = root.pow([2]);
+
+    let y_even = dft(&even, root_sq);
+    let y_odd = dft(&odd, root_sq);
+
+    let mut y = vec![Fr::from(0); n];
+
+    for j in 0..n / 2 {
+        let twiddle = root.pow([j as u64]);
+        y[j] = y_even[j] + twiddle * y_odd[j];
+        y[j + n / 2] = y_even[j] - twiddle * y_odd[j];
+    }
+
+    y
+}
+
+fn fft_evaluate(poly: &UnivariatePoly<Fr>) -> Vec<Fr> {
     let n = poly.coefficient.len();
 
     if !n.is_power_of_two() {
-        panic!("Length of coefficients must be a power of 2");
+        panic!("Length must be a power of 2");
     }
 
-    if n == 1 {
-        return poly.coefficient.clone();
-    }
+    let omega = Fr::get_root_of_unity(n as u64).unwrap();
 
-    let omega = F::get_root_of_unity(n.try_into().unwrap()).unwrap();
-
-    let roots_of_unity: Vec<F> = (0..n).map(|i| omega.pow(&[i as u64])).collect();
-
-    let (p_even, p_odd) = split_poly(&poly.coefficient);
-
-    let p_even_poly = UnivariatePoly::new(p_even);
-    let p_odd_poly = UnivariatePoly::new(p_odd);
-
-    let (y_even, y_odd) = (fft_evaluate(&p_even_poly), fft_evaluate(&p_odd_poly));
-
-    let mut y_points = Vec::with_capacity(n);
-
-    for j in 0..n / 2 {
-        y_points[j] = y_even[j] + (roots_of_unity[j] * y_odd[j]);
-        y_points[j + (n / 2)] = y_even[j] - (roots_of_unity[j] * y_odd[j]);
-    }
-
-    y_points
+    dft(&poly.coefficient, omega)
 }
 
-//takes poly in evaluation form
-fn fft_interpolate<F: PrimeField>(evaluations: &[F]) -> UnivariatePoly<F> {
+fn fft_interpolate(evaluations: &[Fr]) -> UnivariatePoly<Fr> {
     let n = evaluations.len();
 
     if !n.is_power_of_two() {
-        panic!("Length of coefficients must be a power of 2");
+        panic!("Length must be a power of 2");
     }
 
-    if n == 1 {
-        return UnivariatePoly::new(evaluations.to_vec());
+    let omega_inv = Fr::get_root_of_unity(n as u64).unwrap().inverse().unwrap();
+
+    let inv_n = Fr::from(n as u64).inverse().unwrap();
+
+    let mut coeffs = dft(evaluations, omega_inv);
+
+    for coeff in &mut coeffs {
+        *coeff *= inv_n;
     }
-
-    let roots_of_unity: Vec<F> = get_interpolation_roots(n);
-
-    let (p_even, p_odd) = split_poly(evaluations);
-
-    let (y_even, y_odd) = (fft_interpolate(&p_even), fft_interpolate(&p_odd));
-
-    let mut y_points = Vec::with_capacity(n);
-
-    for j in 0..n / 2 {
-        y_points[j] = y_even.coefficient[j] + (roots_of_unity[j] * y_odd.coefficient[j]);
-        y_points[j + (n / 2)] = y_even.coefficient[j] - (roots_of_unity[j] * y_odd.coefficient[j]);
-    }
-
-    UnivariatePoly::new(y_points)
+    UnivariatePoly::new(coeffs)
 }
 
-fn split_poly<F: PrimeField>(poly: &[F]) -> (Vec<F>, Vec<F>) {
+fn split_poly(poly: &[Fr]) -> (Vec<Fr>, Vec<Fr>) {
     let poly_even = poly
         .iter()
         .enumerate()
@@ -86,8 +77,8 @@ fn split_poly<F: PrimeField>(poly: &[F]) -> (Vec<F>, Vec<F>) {
     ((poly_even), (poly_odd))
 }
 
-fn get_interpolation_roots<F: PrimeField>(n: usize) -> Vec<F> {
-    let domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
+fn get_interpolation_roots(n: usize) -> Vec<Fr> {
+    let domain = GeneralEvaluationDomain::<Fr>::new(n).unwrap();
 
     let omega_inv = domain.group_gen_inv();
 
@@ -98,49 +89,61 @@ fn get_interpolation_roots<F: PrimeField>(n: usize) -> Vec<F> {
 
 #[cfg(test)]
 mod test {
-    use ark_bn254::Fq;
-    use num::Complex;
+    use ark_bn254::Fr;
+    use ark_ff::{FftField, Field};
     use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     use super::{fft_evaluate, fft_interpolate, split_poly};
 
     #[test]
-    fn it_splits_poly_correctly() {
+    fn test_splits_poly_correctly() {
         //test with P = x3 + 2x2 -14x + 2
-        let poly = &[Fq::from(2), Fq::from(-14), Fq::from(2), Fq::from(1)];
+        let poly = &[Fr::from(2), Fr::from(-14), Fr::from(2), Fr::from(1)];
 
         let (p_even, p_odd) = split_poly(poly);
 
-        let expected_p_even = vec![Fq::from(2), Fq::from(2)];
+        let expected_p_even = vec![Fr::from(2), Fr::from(2)];
 
-        let expected_p_odd = vec![Fq::from(-14), Fq::from(1)];
+        let expected_p_odd = vec![Fr::from(-14), Fr::from(1)];
 
         assert_eq!(p_even, expected_p_even);
         assert_eq!(p_odd, expected_p_odd);
     }
 
     #[test]
-    fn it_evaluates_poly() {
-        //test with P = 4x3 + 3x2 + 2x + 1
-        let points = vec![Fq::from(1), Fq::from(2), Fq::from(3), Fq::from(4)];
-        let poly = UnivariatePoly::new(points);
+
+    fn test_evaluates_poly() {
+        let coefficients = vec![Fr::from(1), Fr::from(2), Fr::from(3), Fr::from(4)];
+        let poly = UnivariatePoly::new(coefficients);
 
         let evaluations = fft_evaluate(&poly);
 
-        let expected_evaluations = vec![Fq::from(10), Fq::from(-2), Fq::from(-2), Fq::from(-2)];
+        let n = 4;
+        let omega = Fr::get_root_of_unity(n as u64).unwrap();
+        let roots: Vec<Fr> = (0..n).map(|i| omega.pow(&[i as u64])).collect();
+
+        let expected_evaluations: Vec<Fr> = roots
+            .iter()
+            .map(|x| {
+                let x2 = x.square();
+                let x3 = x2 * x;
+                Fr::from(1) + Fr::from(2) * x + Fr::from(3) * x2 + Fr::from(4) * x3
+            })
+            .collect();
 
         assert_eq!(evaluations, expected_evaluations);
     }
 
     #[test]
-    fn it_interpolates_poly() {
-        //same poly as evaluate test
-        let evaluations = vec![Fq::from(10), Fq::from(-2), Fq::from(-2), Fq::from(-2)];
+    fn test_interpolates_poly() {
+        let coeffs = vec![Fr::from(1), Fr::from(2), Fr::from(3), Fr::from(4)];
 
-        let poly = fft_interpolate(&evaluations);
+        let poly = UnivariatePoly::new(coeffs.clone());
 
-        let expected_points = vec![Fq::from(1), Fq::from(2), Fq::from(3), Fq::from(4)];
+        let evaluations = fft_evaluate(&poly);
 
-        assert_eq!(poly.coefficient, expected_points);
+        let interpolated_poly = fft_interpolate(&evaluations);
+
+        assert_eq!(interpolated_poly.coefficient, coeffs);
     }
 }
