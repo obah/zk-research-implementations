@@ -409,6 +409,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fft"
+version = "0.1.0"
+dependencies = [
+ "ark-ff",
+ "univariate_polynomial",
+]
+
+[[package]]
 name = "fiat_shamir"
 version = "0.1.0"
 dependencies = [
