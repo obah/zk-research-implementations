@@ -6,4 +6,6 @@ edition = "2021"
 [dependencies]
 ark-bn254 = "0.5.0"
 ark-ff = "0.5.0"
+ark-poly = "0.5.0"
+num = "0.4.3"
 univariate_polynomial = {path = "../univariate_polynomial"}

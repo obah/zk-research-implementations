@@ -1,5 +1,11 @@
 use ark_ff::PrimeField;
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
+
+//todo 1. look for how to get the array of roots of unity up to n
+//todo 2. adjust interpolate roots of unity either by mapping(scale) or actual halfing
+//todo 3. look for how to represent complex numbers for test
+//todo 4. fix any errors
 
 //takes poly in coeff form
 fn fft_evaluate<F: PrimeField>(poly: &UnivariatePoly<F>) -> Vec<F> {
@@ -13,7 +19,9 @@ fn fft_evaluate<F: PrimeField>(poly: &UnivariatePoly<F>) -> Vec<F> {
         return poly.coefficient.clone();
     }
 
-    let roots_of_unity = F::get_root_of_unity(n.try_into().unwrap()).unwrap();
+    let omega = F::get_root_of_unity(n.try_into().unwrap()).unwrap();
+
+    let roots_of_unity: Vec<F> = (0..n).map(|i| omega.pow(&[i as u64])).collect();
 
     let (p_even, p_odd) = split_poly(&poly.coefficient);
 
@@ -44,8 +52,7 @@ fn fft_interpolate<F: PrimeField>(evaluations: &[F]) -> UnivariatePoly<F> {
         return UnivariatePoly::new(evaluations.to_vec());
     }
 
-    //todo change this based on algorithm
-    let roots_of_unity = F::get_root_of_unity(n.try_into().unwrap()).unwrap();
+    let roots_of_unity: Vec<F> = get_interpolation_roots(n);
 
     let (p_even, p_odd) = split_poly(evaluations);
 
@@ -54,8 +61,8 @@ fn fft_interpolate<F: PrimeField>(evaluations: &[F]) -> UnivariatePoly<F> {
     let mut y_points = Vec::with_capacity(n);
 
     for j in 0..n / 2 {
-        y_points[j] = y_even[j] + (roots_of_unity[j] * y_odd[j]);
-        y_points[j + (n / 2)] = y_even[j] - (roots_of_unity[j] * y_odd[j]);
+        y_points[j] = y_even.coefficient[j] + (roots_of_unity[j] * y_odd.coefficient[j]);
+        y_points[j + (n / 2)] = y_even.coefficient[j] - (roots_of_unity[j] * y_odd.coefficient[j]);
     }
 
     UnivariatePoly::new(y_points)
@@ -79,10 +86,20 @@ fn split_poly<F: PrimeField>(poly: &[F]) -> (Vec<F>, Vec<F>) {
     ((poly_even), (poly_odd))
 }
 
-#[cfg(test)]
+fn get_interpolation_roots<F: PrimeField>(n: usize) -> Vec<F> {
+    let domain = GeneralEvaluationDomain::<F>::new(n).unwrap();
 
+    let omega_inv = domain.group_gen_inv();
+
+    let inv_n = domain.size_as_field_element().inverse().unwrap();
+
+    (0..n).map(|k| omega_inv.pow([k as u64]) * inv_n).collect()
+}
+
+#[cfg(test)]
 mod test {
     use ark_bn254::Fq;
+    use num::Complex;
     use univariate_polynomial::univariate_polynomial_dense::UnivariatePoly;
 
     use super::{fft_evaluate, fft_interpolate, split_poly};
@@ -92,7 +109,7 @@ mod test {
         //test with P = x3 + 2x2 -14x + 2
         let poly = &[Fq::from(2), Fq::from(-14), Fq::from(2), Fq::from(1)];
 
-        let (p_even, p_odd) = split_poly(&poly);
+        let (p_even, p_odd) = split_poly(poly);
 
         let expected_p_even = vec![Fq::from(2), Fq::from(2)];
 
@@ -110,7 +127,7 @@ mod test {
 
         let evaluations = fft_evaluate(&poly);
 
-        let expected_evaluations = vec![Fq::from(), Fq::from(), Fq::from(), Fq::from()];
+        let expected_evaluations = vec![Fq::from(10), Fq::from(-2), Fq::from(-2), Fq::from(-2)];
 
         assert_eq!(evaluations, expected_evaluations);
     }
@@ -118,7 +135,7 @@ mod test {
     #[test]
     fn it_interpolates_poly() {
         //same poly as evaluate test
-        let evaluations = vec![Fq::from(), Fq::from(), Fq::from(), Fq::from()];
+        let evaluations = vec![Fq::from(10), Fq::from(-2), Fq::from(-2), Fq::from(-2)];
 
         let poly = fft_interpolate(&evaluations);
 
