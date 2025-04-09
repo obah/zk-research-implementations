@@ -51,6 +51,36 @@ impl<F: PrimeField> MerkleTree<F> {
         }
     }
 
+    pub fn new_with_inputs(depth: usize, inputs: Vec<F>) -> Result<Self, Box<dyn Error>> {
+        let num_leaves = 1 << depth;
+        if inputs.len() > num_leaves {
+            return Err("Too many inputs for tree depth".into());
+        }
+
+        let mut leaves = vec![F::zero(); num_leaves];
+        for (i, input) in inputs.iter().enumerate() {
+            leaves[i] = Self::compute_hash(*input);
+        }
+
+        let mut tree = Vec::with_capacity(depth);
+        let mut current_level = leaves.clone();
+
+        for _ in 0..depth {
+            let next_level = current_level
+                .chunks(2)
+                .map(|pair| Self::hash_pair(pair[0], pair[1]))
+                .collect::<Vec<_>>();
+            tree.push(next_level.clone());
+            current_level = next_level;
+        }
+
+        Ok(Self {
+            leaves,
+            tree,
+            depth,
+        })
+    }
+
     pub fn update_leaf(
         &mut self,
         leaf_id: usize,
@@ -307,5 +337,32 @@ mod test {
         let result = merkle_tree.create_proof(wrong_data, 0);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_with_inputs() {
+        let depth = 2;
+        let inputs = vec![Fq::from(1), Fq::from(2), Fq::from(3)];
+
+        let merkle_tree = MerkleTree::<Fq>::new_with_inputs(depth, inputs.clone()).unwrap();
+
+        assert_eq!(merkle_tree.leaves.len(), 4);
+        assert_eq!(merkle_tree.tree.len(), depth);
+        assert_eq!(merkle_tree.tree[0].len(), 2);
+        assert_eq!(merkle_tree.tree[1].len(), 1);
+
+        for (i, input) in inputs.iter().enumerate() {
+            assert_eq!(
+                merkle_tree.leaves[i],
+                MerkleTree::<Fq>::compute_hash(*input)
+            );
+        }
+
+        println!("tree is {:#?}", merkle_tree);
+
+        assert_eq!(merkle_tree.leaves[3], Fq::from(0));
+
+        let too_many_inputs = vec![Fq::from(1); 5];
+        assert!(MerkleTree::<Fq>::new_with_inputs(depth, too_many_inputs).is_err());
     }
 }
