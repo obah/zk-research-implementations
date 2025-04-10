@@ -11,6 +11,9 @@ This library provides implementations of several key cryptographic components fo
 - Fiat-Shamir Transform
 - Shamir Secret Sharing
 - Multilinear and Univariate Polynomial Operations
+- Fast Fourier Transform (FFT)
+- Merkle Tree
+- Sum-Check Protocol
 
 ## Components
 
@@ -69,6 +72,37 @@ The GKR protocol implementation consists of:
   - Implements polynomial interpolation
   - Provides evaluation and arithmetic operations
 
+### Fast Fourier Transform (FFT)
+
+- **FFT Implementation** (`fft.rs`):
+  - Implements Discrete Fourier Transform (DFT)
+  - Provides polynomial evaluation via FFT
+  - Supports polynomial interpolation via inverse FFT
+  - Optimized for finite field operations
+
+### Merkle Tree
+
+- **Merkle Tree** (`merkle_tree.rs`):
+  - Implements a binary Merkle tree structure
+  - Supports proof generation and verification
+  - Provides leaf updates and path recomputation
+  - Uses field elements as leaf values
+
+### Sum-Check Protocol
+
+- **Sum-Check Protocol** (`sum_check_protocol.rs`):
+  - Implements the sum-check protocol for multilinear polynomials
+  - Provides proof generation and verification
+  - Includes specialized GKR protocol integration
+  - Supports composed polynomial structures
+
+### Sample Tests
+
+- **Fibonacci Evaluation** (`fibonacci_evaluation.rs`):
+  - Demonstrates polynomial interpolation with Fibonacci sequence
+  - Shows practical application of univariate polynomials
+  - Provides verification of Fibonacci properties
+
 ## Technical Details
 
 ### GKR Circuit
@@ -104,19 +138,55 @@ The multilinear polynomial implementation provides:
 - Efficient partial evaluation algorithms
 - Operations compatible with the GKR protocol
 
+### Fast Fourier Transform
+
+The FFT implementation provides:
+
+- Efficient polynomial evaluation in O(n log n) time
+- Polynomial interpolation via inverse FFT
+- Optimized for finite field operations
+- Support for various field types
+
+### Merkle Tree
+
+The Merkle tree implementation offers:
+
+- Efficient membership proofs
+- Logarithmic verification complexity
+- Support for dynamic updates
+- Integration with field elements
+
+### Sum-Check Protocol
+
+The sum-check protocol implementation provides:
+
+- Interactive proof system for sum verification
+- Non-interactive variant via Fiat-Shamir
+- Integration with GKR protocol
+- Support for composed polynomial structures
+
 ## Dependencies
 
 - `ark-ff`: Finite field operations
 - `ark-ec`: Elliptic curve operations
 - `ark-bls12-381`: BLS12-381 curve implementation
 - `ark-bn254`: BN254 curve implementation
+- `ark-poly`: Polynomial operations
 - `sha3`: Keccak256 hashing
 - `rand`: Random number generation
 
 ## Usage
 
-All components are made to be easy to understand and use.
+All components are made to be easy to understand and use. The library provides a comprehensive set of tools for implementing zero-knowledge proofs and cryptographic primitives.
 
 ## Testing
 
-Each component includes comprehensive unit tests demonstrating functionality and correctness.
+Each component includes comprehensive unit tests demonstrating functionality and correctness. Run tests using:
+
+```bash
+cargo test
+```
+
+## License
+
+[License information would go here]
